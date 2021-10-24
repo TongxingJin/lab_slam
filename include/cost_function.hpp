@@ -18,13 +18,15 @@
 // 如果不需要插值进行畸变校正，那么s不赋值即可
 struct LineFactor{
     LineFactor(Eigen::Vector3d pa, Eigen::Vector3d pb, Eigen::Vector3d p, double s = 1.0):last_point_a(pa), \
-        last_point_b(pb), current_point(p), inter_coeff(s){}
+        last_point_b(pb), current_point(p), inter_coeff(s){
+        ab_norm = (last_point_b - last_point_a).norm();
+    }
 
     template <typename T>
     bool operator()(const T* q, const T* t, T* residual) const {
         Eigen::Quaternion<T> current_q(q[3], q[0], q[1], q[2]);// 要注意顺序
-        Eigen::Quaternion<T> identity_q = Eigen::Quaternion<T>(T(1), T(0), T(0), T(0));
-        current_q = identity_q.slerp(T(inter_coeff), current_q);// 处处注意T
+//        Eigen::Quaternion<T> identity_q = Eigen::Quaternion<T>(T(1), T(0), T(0), T(0));
+//        current_q = identity_q.slerp(T(inter_coeff), current_q);// 处处注意T
         Eigen::Matrix<T, 3, 1> current_t(T(inter_coeff) * t[0], T(inter_coeff) * t[1], T(inter_coeff) * t[2]);
 
         Eigen::Matrix<T, 3, 1> cp(T(current_point.x()), T(current_point.y()), T(current_point.z()));
@@ -34,9 +36,10 @@ struct LineFactor{
         Eigen::Matrix<T, 3, 1> lpb(T(last_point_b.x()), T(last_point_b.y()), T(last_point_b.z()));
 
         Eigen::Matrix<T, 3, 1> height = (lpb - lpa).cross(current_global_point - lpa);
-        residual[0] = height(0);// 这里要求lab-lba为单位向量
-        residual[1] = height(1);// 这里要求lab-lba为单位向量
-        residual[2] = height(2);// 这里要求lab-lba为单位向量
+//        Eigen::Matrix<T, 3, 1> delta = lpb - lpa;
+        residual[0] = height(0) / T(ab_norm);
+        residual[1] = height(1) / T(ab_norm);
+        residual[2] = height(2) / T(ab_norm);
         return true;
     }
 
@@ -46,35 +49,39 @@ struct LineFactor{
     }
     Eigen::Vector3d last_point_a, last_point_b, current_point;
     double inter_coeff;
+    double ab_norm;
 };
 
-
+// For every given point, and plane {plane_norm, d} with plane_norm normalized in advance,
+// the error is plane_norm.dot(point) + d
 struct PlaneFactor{
-    PlaneFactor(Eigen::Vector3d plane_norm, double reverse_norm_value, double s = 1):plane_coeffs(plane_norm), reverse_norm(reverse_norm_value), inter_coeff(s){}
+    PlaneFactor(Eigen::Vector3d plane_norm, double dis, Eigen::Vector3d input_point, double s = 1):plane_norm_(plane_norm),
+        dis_(dis), current_point_(input_point), inter_coeff_(s){}
 
     template <typename T>
     bool operator()(const T* q, const T* t, T* residual) const {
         Eigen::Quaternion<T> current_q(q[3], q[0], q[1], q[2]);
         Eigen::Quaternion<T> identiy_q(T(1), T(0), T(0), T(0));
-        current_q = identiy_q.slerp(T(inter_coeff), current_q);// 处处注意T
-        Eigen::Matrix<T, 3, 1> current_t(T(inter_coeff) * t[0], T(inter_coeff) * t[1], T(inter_coeff) * t[2]);
-        Eigen::Matrix<T, 3, 1> current_global_point(T(current_point.x()), T(current_point.y()), T(current_point.z()));
+        current_q = identiy_q.slerp(T(inter_coeff_), current_q);// 处处注意T
+        Eigen::Matrix<T, 3, 1> current_t(T(inter_coeff_) * t[0], T(inter_coeff_) * t[1], T(inter_coeff_) * t[2]);
+        Eigen::Matrix<T, 3, 1> current_global_point(T(current_point_.x()), T(current_point_.y()), T(current_point_.z()));
         current_global_point = current_q * current_global_point + current_t;
 
-        Eigen::Matrix<T, 3, 1> plane_norm(T(plane_coeffs.x()), T(plane_coeffs.y()), T(plane_coeffs.z()));
-        residual[0] = plane_norm.dot(current_global_point) + T(reverse_norm);
+        Eigen::Matrix<T, 3, 1> plane_norm(T(plane_norm_.x()), T(plane_norm_.y()), T(plane_norm_.z()));
+        residual[0] = plane_norm.dot(current_global_point) + T(dis_);
         return true;
     }
 
     // 要求plane_norm是平面的单位法向量
-    static ceres::CostFunction* create(Eigen::Vector3d plane_norm, double reverse_norm_value, double s = 1){
-        return new ceres::AutoDiffCostFunction<PlaneFactor, 1, 4, 3>(new PlaneFactor(plane_norm, reverse_norm_value, s));
+    //TODO: 一定要梳理清楚所有的输入和输出，不要遗漏
+    static ceres::CostFunction* create(Eigen::Vector3d plane_norm, double dis, Eigen::Vector3d input_point, double s = 1){
+        return new ceres::AutoDiffCostFunction<PlaneFactor, 1, 4, 3>(new PlaneFactor(plane_norm, dis, input_point, s));
     }
 
-    Eigen::Vector3d plane_coeffs;
-    double reverse_norm;
-    Eigen::Vector3d current_point;
-    double inter_coeff;
+    Eigen::Vector3d plane_norm_;
+    double dis_;
+    Eigen::Vector3d current_point_;
+    double inter_coeff_;
 };
 
 #endif

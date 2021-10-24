@@ -4,30 +4,39 @@
 
 #include "pre_processor.h"
 #include "cost_function.hpp"
-#include "data_center.hpp"
+#include "data_defination.hpp"
 
 PreProcessor::PreProcessor(){
-    ros::NodeHandle nh;
-    cloud_sub_ = nh.subscribe(topic_name_, 5, &PreProcessor::cloudCallback, this);
-    corners_pub_ = nh.advertise<sensor_msgs::PointCloud2>("corner_points", 2);
-    planes_pub_ = nh.advertise<sensor_msgs::PointCloud2>("plane_points", 2);
+    // 若topic_name中不含/
+    // 则若nh不加~，那么topic都是在全局下的，加上则在顶层node下
+    ros::NodeHandle nh("~");
+//    cloud_sub_ = nh.subscribe(topic_name_, 5, &PreProcessor::cloudCallback, this);
+    projected_cloud_ = nh.advertise<sensor_msgs::PointCloud>("projected_cloud", 10);
+    corners_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/preprocess/corner_points", 2);
+    planes_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/preprocess/plane_points", 2);
+    less_corners_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/preprocess/less_corner_points", 2);
+    less_planes_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/preprocess/less_plane_points", 2);
     cloud_.reset(new PointCloudVelodyne);
     cloud_image_.reset(new PointCloudXYZI);
     full_cloud_.reset(new PointCloudXYZI);
     corner_points_.reset(new PointCloudXYZI);
+    less_corner_points_.reset(new PointCloudXYZI);
     plane_points_.reset(new PointCloudXYZI);
-    scan_down_sample_filter_.setLeafSize(0.2, 0.2, 0.2);
+    less_plane_points_.reset(new PointCloudXYZI);
+    scan_down_sample_filter_.setLeafSize(0.5, 0.5, 0.5);
     ROS_INFO("Preprocessor has been created...");
-    LOG(INFO) << "Preprocessor has been created... by glog";
 }
 
 void PreProcessor::resetParam() {
+//    if(cloud_) cloud_->clear();
+//    cloud_ = velodyne_cloud;
     cloud_->clear();
     cloud_image_->clear();
     cloud_image_->resize(N_SCAN_ * HORIZON_SCAN_);// 有的位置在投影后可能是未定义的状态，与range_image_对应
     range_image_.resize(N_SCAN_, HORIZON_SCAN_);
-    range_image_.setOnes();
-    range_image_ *= -1;
+//    range_image_.setOnes();
+//    range_image_ *= -1;
+    range_image_.setConstant(-1);
     full_cloud_->clear();
     start_index_.clear();
     start_index_.resize(N_SCAN_);
@@ -38,7 +47,9 @@ void PreProcessor::resetParam() {
     curve_id_.clear();
     selected_.clear();
     corner_points_->clear();
+    less_corner_points_->clear();
     plane_points_->clear();
+    less_plane_points_->clear();
 }
 
 template <typename Point>
@@ -84,7 +95,8 @@ void PreProcessor::pointIndex(const PointVelodyne& point, int& i, int& j){
     i = static_cast<int>(point.ring);
     // x负方向为0,逆时针递增
 //    float resolution = 0.0;
-    j = HORIZON_SCAN_ * 0.5 - round((atan2(point.x, point.y) - M_PI_2) / (2 * M_PI) * HORIZON_SCAN_);// 在这里round的括号一定要搞清楚
+//    j = HORIZON_SCAN_ * 0.5 - round((atan2(point.x, point.y) - M_PI_2) / (2 * M_PI) * HORIZON_SCAN_);// 在这里round的括号一定要搞清楚
+    j = int((atan2(point.x, point.y) + M_PI) / (2 * M_PI) * HORIZON_SCAN_);
     if(j < 0) j = 0;
     if(j >= HORIZON_SCAN_)  j = HORIZON_SCAN_ - 1;
 }
@@ -92,6 +104,7 @@ void PreProcessor::pointIndex(const PointVelodyne& point, int& i, int& j){
 void PreProcessor::projectToImage(){
     size_t cloud_size = cloud_->points.size();
     LOG(INFO) << "original points size: " << cloud_size;
+    int count = 0;
     for(size_t index = 0; index < cloud_size; ++index){
         int i, j;
         const auto& point = cloud_->points[index];
@@ -103,8 +116,12 @@ void PreProcessor::projectToImage(){
             im_point.y = point.y;
             im_point.z = point.z;
             im_point.intensity = point.ring + 0.1 * point.time;
+        }else{
+//            LOG(INFO) << "Exists!";
+//            count++;
         }
     }
+//    LOG(INFO) << "Duplicate count: " << count;
 }
 
 void PreProcessor::rearrangeBackCloud() {
@@ -119,6 +136,7 @@ void PreProcessor::rearrangeBackCloud() {
             }
         }
         end_index_[row] = full_cloud_->size() - 1 - 5;
+//        LOG(INFO) << "row " << row << " points: " << end_index_[row] - start_index_[row];// 高处的线有效点数只有300+
     }
     LOG(INFO) << "full cloud size: " << full_cloud_->size();
 }
@@ -185,9 +203,16 @@ void PreProcessor::extractFeatures() {
             for(size_t curve_id = sector_start_id; curve_id < sector_end_id; ++curve_id){
                 size_t point_id = curve_id_[curve_id].second;
                 float curve = curve_id_[curve_id].first;
+                if(curve < corner_thre_) break;// 后面的只会更小
                 if(!selected_[point_id]){
-                    if(curve < corner_thre_) break;// 后面的只会更小
-                    corner_points_->push_back(full_cloud_->points[point_id]);
+                    if(corner_count < 4){
+                        corner_points_->push_back(full_cloud_->points[point_id]);
+                        less_corner_points_->push_back(full_cloud_->points[point_id]);
+                    }else if(corner_count < 20){
+                        less_corner_points_->push_back(full_cloud_->points[point_id]);
+                    }else{
+                        break;
+                    }
                     // 附近都不能再被选中
                     selected_[point_id] = true;
                     int offset = 1;
@@ -202,16 +227,16 @@ void PreProcessor::extractFeatures() {
                         selected_[point_id - offset] = true;
                         offset++;
                     }
-                    if(++corner_count > 10) break;
+                    if(++corner_count >= 20) break;
                 }
             }
             int plane_count = 0;
             for(int curve_id = sector_end_id - 1; curve_id >= sector_start_id; --curve_id){
                 size_t point_id = curve_id_[curve_id].second;
                 float curve = curve_id_[curve_id].first;
+                if(curve > plane_thre_) break;
                 if(!selected_[point_id]){
-                    if(curve > plane_thre_) break;
-                    plane_scan->push_back(full_cloud_->points[point_id]);
+                    plane_points_->push_back(full_cloud_->points[point_id]);
                     // 附近都不能再被选中
                     selected_[point_id] = true;
                     int offset = 1;
@@ -226,92 +251,101 @@ void PreProcessor::extractFeatures() {
                         selected_[point_id - offset] = true;
                         offset++;
                     }
-                    if(++plane_count > 50) break;
+                    if(++plane_count > 10) break;
+                }
+            }
+            for(int curve_id = sector_end_id - 1; curve_id >= sector_start_id; --curve_id){
+                size_t point_id = curve_id_[curve_id].second;
+                if(!selected_[point_id]){
+                    plane_scan->push_back(full_cloud_->points[point_id]);
                 }
             }
         }
         // 对同一个scan上的面点降采样然后保存到plane_points_
         scan_down_sample_filter_.setInputCloud(plane_scan);
         scan_down_sample_filter_.filter(*plane_scan);
-        *plane_points_ += *plane_scan;
+        *less_plane_points_ += *plane_scan;
     }
+    LOG(INFO) << "Features count: " << corner_points_->size() << ", " << less_corner_points_->size() << ", "
+              << plane_points_->size() << ", " << less_plane_points_->size();
 }
 
-//void PreProcessor::publishFeas(double time_stamp){
-////    sensor_msgs::PointCloud2 temp_cloud_msg;
-////    pcl::toROSMsg(*corner_points_, temp_cloud_msg);
-////    temp_cloud_msg.header.frame_id = "velodyne";
-////    corners_pub_.publish(temp_cloud_msg);
-////    pcl::toROSMsg(*plane_points_, temp_cloud_msg);
-////    temp_cloud_msg.header.frame_id = "velodyne";
-////    planes_pub_.publish(temp_cloud_msg);
-//    DataGroupPtr data_group(new DataGroup);
-//    data_group->time_stamp = time_stamp;
-//    data_group->corner_cloud = std::move(corner_points_);// TODO:
-//    corner_points_.reset(new PointCloudXYZI);
-//    data_group->plane_cloud = std::move(plane_points_);
-//    plane_points_.reset(new PointCloudXYZI);
-//    data_group->is_finished = true;
-//    data_center_mutex.lock();
-//    std::cout << "Data center add in pre_process: " << &data_center << std::endl;
-//    data_center.emplace_back(data_group);
-//    data_center_mutex.unlock();
+void PreProcessor::publishSaveFeas(std_msgs::Header h, DataGroupPtr data_group){
+    sensor_msgs::PointCloud2 temp_cloud_msg;
+    temp_cloud_msg.header = h;
+    pcl::toROSMsg(*corner_points_, temp_cloud_msg);
+    temp_cloud_msg.header = h;
+//    temp_cloud_msg.header.frame_id = "velodyne";
+    corners_pub_.publish(temp_cloud_msg);
+    pcl::toROSMsg(*less_corner_points_, temp_cloud_msg);
+    temp_cloud_msg.header = h;
+//    temp_cloud_msg.header.frame_id = "velodyne";
+    less_corners_pub_.publish(temp_cloud_msg);
+    pcl::toROSMsg(*plane_points_, temp_cloud_msg);
+    temp_cloud_msg.header = h;
+//    temp_cloud_msg.header.frame_id = "velodyne";
+    planes_pub_.publish(temp_cloud_msg);
+    pcl::toROSMsg(*less_plane_points_, temp_cloud_msg);
+    temp_cloud_msg.header = h;
+//    temp_cloud_msg.header.frame_id = "velodyne";
+    less_planes_pub_.publish(temp_cloud_msg);
+
+    double time_stamp = h.stamp.toSec();
+    LOG(INFO) << "Time stamp: " << std::fixed << std::setprecision(3) << time_stamp << " seconds.";
+    data_group->time_stamp = time_stamp;
+    data_group->corner_cloud = std::move(corner_points_);// corner_points_依然是一个可以指向cloud的指针变量，可以被取地址，但是其内容已经被置空，需要重新被reset才能使用
+    corner_points_.reset(new PointCloudXYZI);
+    data_group->plane_cloud = std::move(plane_points_);
+    plane_points_.reset(new PointCloudXYZI);
+    data_group->less_corner_cloud = std::move(less_corner_points_);
+    less_corner_points_.reset(new PointCloudXYZI);
+    data_group->less_plane_cloud = std::move(less_plane_points_);
+    less_plane_points_.reset(new PointCloudXYZI);
+    data_group->h = h;
+    data_group->is_finished = true;
 //    LOG(INFO) << "corner points num: " << data_group->corner_cloud->points.size() << ", plane points num: " << data_group->plane_cloud->points.size();
-//    LOG(INFO) << "Data center size: " << data_center.size() << std::endl;
-//}
-
-void PreProcessor::cloudCallback(const sensor_msgs::PointCloud2::ConstPtr& cloud_msg){
-    msg_mutex_.lock();
-    msgs_.emplace_back(cloud_msg);
-    LOG(INFO) << "Msg size after push: " << msgs_.size();
-    msg_mutex_.unlock();
+//    LOG(INFO) << "less corner points num: " << data_group->less_corner_cloud->points.size() << ", less plane points num: " << data_group->less_plane_cloud->points.size();
 }
+
+void PreProcessor::publishPointCloudFullCloud(std_msgs::Header h){
+    sensor_msgs::PointCloud cloud;
+    for(const auto& p : full_cloud_->points){
+        geometry_msgs::Point32 pp;
+        pp.x = p.x;
+        pp.y = p.y;
+        pp.z = p.z;
+        cloud.points.push_back(pp);
+    }
+    cloud.header = h;
+    projected_cloud_.publish(cloud);
+}
+
+//void PreProcessor::cloudCallback(const sensor_msgs::PointCloud2::ConstPtr& cloud_msg){
+//    msg_mutex_.lock();
+//    msgs_.emplace_back(cloud_msg);
+//    LOG(INFO) << "Msg size after push: " << msgs_.size();
+//    msg_mutex_.unlock();
+//}
 
 // 对于sensor_msgs::PointCloud2型的消息，field中可以自定义不同的成员变量，
 // 进一步，在pcl中定义新的Point类型，且其成员变量与sensor_msgs::PointCloud2严格对齐的情况下，
 // pcl的pcl::fromROSMsg等函数，可以正常完成运算
-void PreProcessor::work(){
-    ROS_INFO("Preprocessor work thread is created...");
-    ROS_INFO("Data center add in pre_process: %p", DataCenter::Instance());
-//    while(1){
-//        LOG(INFO) << "*****Preprocess work...";
-//        if(msgs_.empty()){
-////            std::this_thread::sleep_for(std::chrono::duration<std::chrono::seconds>(0.01));
-//            sleep(0.01);
-//            continue;
-//        }
-//        msg_mutex_.lock();
-//        auto cloud_msg = msgs_.front();
-//        msgs_.pop_front();
-//        msg_mutex_.unlock();
-//        LOG(INFO) << "Handle new msg---------------";
-//        resetParam();
-////    std::cout << cloud_msg->fields.size() << std::endl;
-////    for(int index = 0; index < cloud_msg->fields.size(); ++index){
-////        std::cout << cloud_msg->fields[index].name << std::endl;
-////    }
-//        pcl::fromROSMsg(*cloud_msg, *cloud_);// sensor_msgs::PointCloud2 -> pcl::PCLPointCloud2 ->pcl::PointCloud<T>
-//        filter();
-//        // 投影到image中，会存在Nan位置，同时点的类型从Velodyne->PointXYZI
-//        projectToImage();
-//        // 更加紧凑，同时记录下每个线的起止索引，每个点所在的列
-//        rearrangeBackCloud();
-//        // 计算曲率
-//        calcuCurvature();
-//        // 处理遮挡和噪声
-//        excludeOcculded();
-//        extractFeatures();
-//        double time_stamp = cloud_msg->header.stamp.toSec();
-//        LOG(INFO) << "Time stamp: " << std::fixed << std::setprecision(3) << time_stamp << "s.";
-//        publishFeas(time_stamp);
-//    }
-}
-
-int main(int argc, char** argv){
-    google::InitGoogleLogging("pre_processor");
-    ros::init(argc, argv, "pre_processor");
-    PreProcessor processor;
-    std::thread msg_deal(&PreProcessor::work, &processor);
-    ros::spin();
-    return 0;
+void PreProcessor::work(const sensor_msgs::PointCloud2::ConstPtr& velodyne_msg, const DataGroupPtr& datagroup){
+    LOG(INFO) << "Handle new msg---------------";
+    resetParam();
+    pcl::fromROSMsg(*velodyne_msg, *cloud_);
+    filter();
+    // 投影到image中，会存在Nan位置，同时点的类型从Velodyne->PointXYZI
+    projectToImage();
+    // 更加紧凑，同时记录下每个线的起止索引，每个点所在的列
+    rearrangeBackCloud();
+    publishPointCloudFullCloud(velodyne_msg->header);
+    // 计算曲率
+    calcuCurvature();
+    // 处理遮挡和噪声
+    excludeOcculded();
+    extractFeatures();
+//    double time_stamp = 1e-6 * velodyne_cloud->header.stamp;// TODO：确认是否足够大
+//    LOG(INFO) << "Time stamp: " << std::fixed << std::setprecision(3) << time_stamp << " seconds.";
+    publishSaveFeas(velodyne_msg->header, datagroup);
 }

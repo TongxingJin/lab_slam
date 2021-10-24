@@ -1,4 +1,5 @@
 <launch>
-    <node pkg="lab_slam" type="pre_processor" name="pre_processor" output="screen"/>
-    <node pkg="lab_slam" type="lidar_odometry" name="lidar_odometry" output="screen"/>
+<!--    <node pkg="lab_slam" type="pre_processor" name="pre_processor" output="screen"/>-->
+<!--    <node pkg="lab_slam" type="lidar_odometry" name="lidar_odometry" output="screen"/>-->
+    <node pkg="lab_slam" type="lab_slam" name="lab_slam" output="screen"/>
 </launch>

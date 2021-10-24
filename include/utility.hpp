@@ -5,7 +5,11 @@
 #include <pcl/point_types.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/common/transforms.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/common/transforms.h>
 #include <glog/logging.h>
+#include <chrono>
+
 struct VelodynePointXYZIRT
 {
     PCL_ADD_POINT4D;
@@ -52,5 +56,27 @@ Point pointTransform(Point point, Eigen::Affine3d trans){
     result_point.y = transformed_pose.y();
     result_point.z = transformed_pose.z();
     result_point.intensity = point.intensity;
+    return result_point;// return一定不要忘记啊！！！
 }
+
+template <typename Point>
+double pointDis(const Point& p1, const Point& p2){
+    return (pointToEigenVector(p1) - pointToEigenVector(p2)).norm();
+}
+
+class Timer{
+public:
+    Timer(std::string name){
+        name_ = name;
+        start_timepoint_ = std::chrono::steady_clock::now();
+    }
+
+    void end(){
+        auto end_time_point = std::chrono::steady_clock::now();
+        LOG(INFO) << name_ << " elapsed " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time_point - start_timepoint_).count() << " ms.";
+    }
+private:
+    std::chrono::steady_clock::time_point start_timepoint_;
+    std::string name_;
+};
 #endif

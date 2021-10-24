@@ -38,11 +38,16 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${Eigen_INCLUDE_DIRS} ${PCL_I
 #
 #target_link_libraries(IMU_attitude ${catkin_LIBRARIES} ${PCL_LIBRARIES})
 
-add_executable(pre_processor src/pre_processor.cpp)
-target_link_libraries(pre_processor ${catkin_LIBRARIES} ${PCL_LIBRARIES} glog)
+#add_executable(pre_processor src/pre_processor.cpp)
+#target_link_libraries(pre_processor ${catkin_LIBRARIES} ${PCL_LIBRARIES} glog)
 
 #add_executable(feature_register_demo test/feature_register_test.cpp src/features_register.cpp)
 #target_link_libraries(feature_register_demo ${catkin_LIBRARIES} ${PCL_LIBRARIES} glog)
 
-add_executable(lidar_odometry src/lidar_odometry.cpp src/features_register.cpp)
-target_link_libraries(lidar_odometry ${catkin_LIBRARIES} ${PCL_LIBRARIES} glog ${CERES_LIBRARIES})
+#add_executable(lidar_odometry src/lidar_odometry.cpp src/features_register.cpp src/lab_slam.cpp include/lab_slam.h)
+#target_link_libraries(lidar_odometry ${catkin_LIBRARIES} ${PCL_LIBRARIES} glog ${CERES_LIBRARIES})
+
+file(GLOB_RECURSE src_files src/*.cpp)
+
+add_executable(lab_slam ${src_files}) # ${}不能少
+target_link_libraries(lab_slam ${catkin_LIBRARIES} ${PCL_LIBRARIES} glog ${CERES_LIBRARIES})

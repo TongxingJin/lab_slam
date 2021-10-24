@@ -7,6 +7,7 @@
 
 #include "utility.hpp"
 #include <ros/ros.h>
+#include <sensor_msgs/PointCloud.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <string>
 #include <pcl_conversions/pcl_conversions.h>
@@ -16,6 +17,7 @@
 #include <deque>
 #include <mutex>
 #include <thread>
+#include "data_defination.hpp"
 
 /* Function:
  * 订阅激光雷达原始点云，剔除nan和近距离内的点，并根据曲率提取角点和面点
@@ -29,16 +31,19 @@ public:
     };
     PreProcessor();
     void cloudCallback(const sensor_msgs::PointCloud2::ConstPtr& cloud_msg);
-    void work();
+    void work(const sensor_msgs::PointCloud2::ConstPtr& velodyne_msg, const DataGroupPtr& data);
 private:
     std::string topic_name_ = std::string("/points_raw");// velodyne_points
     int N_SCAN_ = 16;
     int HORIZON_SCAN_ = 1800;
-    ros::Subscriber cloud_sub_;
+//    ros::Subscriber cloud_sub_;
+    ros::Publisher projected_cloud_;
     ros::Publisher corners_pub_;
     ros::Publisher planes_pub_;
-    std::deque<sensor_msgs::PointCloud2::ConstPtr> msgs_;
-    std::mutex msg_mutex_;
+    ros::Publisher less_corners_pub_;
+    ros::Publisher less_planes_pub_;
+//    std::deque<sensor_msgs::PointCloud2::ConstPtr> msgs_;
+//    std::mutex msg_mutex_;
     PointCloudVelodynePtr cloud_;// 原始点云
     PointCloudXYZIPtr cloud_image_;// 有的位置点无效
     PointCloudXYZIPtr full_cloud_;// 去重过的
@@ -50,11 +55,13 @@ private:
     // 特征提取
     std::vector<std::pair<float, size_t> > curve_id_;
     std::vector<bool> selected_;// 被排除掉或者已经被选中过的点
-    float corner_thre_ = 1.0;
-    float plane_thre_ = 0.1;
+    float corner_thre_ = 20.0;
+    float plane_thre_ = 0.01;
     pcl::VoxelGrid<PointXYZI> scan_down_sample_filter_;
     PointCloudXYZIPtr corner_points_;
+    PointCloudXYZIPtr less_corner_points_;
     PointCloudXYZIPtr plane_points_;
+    PointCloudXYZIPtr less_plane_points_;
     void resetParam();
     void pointIndex(const PointVelodyne& point, int& i, int& j);
     template <typename Point>
@@ -70,7 +77,8 @@ private:
     void calcuCurvature();
     void excludeOcculded();
     void extractFeatures();
-    void publishFeas(double time_stamp);
+    void publishSaveFeas(std_msgs::Header h, DataGroupPtr data_group);
+    void publishPointCloudFullCloud(std_msgs::Header h);
 };
 
 

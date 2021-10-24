@@ -20,11 +20,14 @@ public:
     // 模板函数必须在头文件中实现！！！
     template <typename PointType>
     void pointProjToStart(const PointType& local_point, PointType& result_point){
+        // 如果不需要考虑运动畸变，那么可以认为点都是在最后时刻瞬间完成的，因此只需要考虑delta_pose，就可以投影到起始时刻（也是上一帧的终止时刻）
+        // 如果需要考虑畸变，那么delta_pose的过程中始终存在畸变，因此对delta_pose进行插值后再投影
+        // 最后的结果都是基于delta_pose,将本帧的点在上一帧坐标系下表示，从而确定最近邻
         Eigen::Quaterniond inter_q(q_);
         Eigen::Vector3d inter_t(t_);
         if(DISTORTION){
             double inter_coeff = (local_point.intensity - int(local_point.intensity)) / 0.1;// TODO:10Hz雷达
-            inter_q = Eigen::Quaterniond::Identity().slerp(inter_coeff, q_);
+            inter_q = Eigen::Quaterniond::Identity().slerp(inter_coeff, inter_q);
             inter_t *= inter_coeff;
         }
         //    Eigen::Vector3d current_point(local_point.x, local_point.y, local_point.z);
@@ -33,6 +36,8 @@ public:
         //    global_point.y = current_point.y();
         //    global_point.z = current_point.z();
         //    global_point.intensity = local_point.intensity;
+//        LOG(INFO) << "inter value: " << inter_q.x() << ", " << inter_q.y() << ", " << inter_q.z() << ", " << inter_q.w();
+//        LOG(INFO) << "inter value: " << inter_t;
         result_point = pointTransform(local_point, Eigen::Affine3d(inter_q * Eigen::Translation3d(inter_t)));
     }
 
@@ -62,9 +67,10 @@ public:
 private:
     double delta_q_[4] = {0.0, 0.0, 0.0, 1.0};// x, y, z, w，这是ceres所决定的。而在Eigen::Quaternion的初始化中，w放在前面
     double delta_t_[3] = {0.0, 0.0, 0.0};
-    Eigen::Map<Eigen::Quaterniond> q_;// 不能在这里进行构造，只能定义
+    Eigen::Map<Eigen::Quaterniond> q_;// 不能在这里进行构造，只能声明
     Eigen::Map<Eigen::Vector3d> t_;
-    int max_ite_ = 4;
+    int max_ite_ = 10;// TODO
     bool DISTORTION = false;
+    int NEAR_LINE_NUM = 2;
 };
 #endif //LABLOAM_FEATURES_REGISTER_H
