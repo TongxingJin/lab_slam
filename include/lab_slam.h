@@ -11,6 +11,7 @@
 #include <sensor_msgs/PointCloud.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <mutex>
+#include <condition_variable>
 #include <thread>
 #include "utility.hpp"
 #include <pcl_conversions/pcl_conversions.h>
@@ -26,10 +27,11 @@ private:
     ros::Subscriber cloud_msg_sub_;
     PreProcessor pre_processor_;
     LidarOdometry lidar_odo_;
-    std::deque<sensor_msgs::PointCloud2::ConstPtr> velodyne_cloud_;
-//    std::deque<std_msgs::Header> headers_;
-    std::mutex velodyne_cloud_mutex_;
+    std::deque<sensor_msgs::PointCloud2::ConstPtr> velodyne_msgs_;
+    std::mutex velodyne_msg_mutex_;
+    std::condition_variable msg_condit_var_;
     std::deque<DataGroupPtr> data_;
     std::mutex data_mutex_;
+    std::condition_variable data_condit_var_;
 };
 #endif //LAB_SLAM_LAB_SLAM_H

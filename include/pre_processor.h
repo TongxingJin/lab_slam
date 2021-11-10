@@ -35,9 +35,11 @@ public:
 private:
     std::string topic_name_ = std::string("/points_raw");// velodyne_points
     int N_SCAN_ = 16;
+    int ground_scan_ = 7;
     int HORIZON_SCAN_ = 1800;
 //    ros::Subscriber cloud_sub_;
-    ros::Publisher projected_cloud_;
+    ros::Publisher full_cloud_pub_;
+    ros::Publisher ground_and_clusters_pub_;
     ros::Publisher corners_pub_;
     ros::Publisher planes_pub_;
     ros::Publisher less_corners_pub_;
@@ -47,15 +49,21 @@ private:
     PointCloudVelodynePtr cloud_;// 原始点云
     PointCloudXYZIPtr cloud_image_;// 有的位置点无效
     PointCloudXYZIPtr full_cloud_;// 去重过的
+    PointCloudXYZIPtr ground_and_clusters_;
     Eigen::Matrix<float, Eigen::Dynamic,  Eigen::Dynamic> range_image_;
+    Eigen::Matrix<float, Eigen::Dynamic,  Eigen::Dynamic> ground_label_;
+    Eigen::Matrix<float, Eigen::Dynamic,  Eigen::Dynamic> cluster_label_;
     std::vector<size_t> start_index_;
     std::vector<size_t> end_index_;
     std::vector<int> col_index_;
     std::vector<float> ranges_;
+    std::vector<bool> ground_flags_;
+    std::vector<std::pair<int, int>> direction_;
+    size_t component_index_ = 1;
     // 特征提取
     std::vector<std::pair<float, size_t> > curve_id_;
     std::vector<bool> selected_;// 被排除掉或者已经被选中过的点
-    float corner_thre_ = 20.0;
+    float corner_thre_ = 1.0;
     float plane_thre_ = 0.01;
     pcl::VoxelGrid<PointXYZI> scan_down_sample_filter_;
     PointCloudXYZIPtr corner_points_;
@@ -73,11 +81,17 @@ private:
         return sqrt(point.x * point.x + point.y * point.y + point.z * point.z);
     }
     void projectToImage();
+    void markGround();
+    void componentCluster(int row, int col);
+    // 标记地面，对非地面点进行聚类，从而对image中的点进行筛选
+    void markGroundAndComponentCluster();
+
+    // image到点云
     void rearrangeBackCloud();
     void calcuCurvature();
     void excludeOcculded();
     void extractFeatures();
-    void publishSaveFeas(std_msgs::Header h, DataGroupPtr data_group);
+    void publishSaveFeas(std_msgs::Header h, const DataGroupPtr& data_group);
     void publishPointCloudFullCloud(std_msgs::Header h);
 };
 

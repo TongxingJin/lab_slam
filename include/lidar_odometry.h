@@ -10,7 +10,7 @@
 #include "data_defination.hpp"
 #include <sensor_msgs/PointCloud2.h>
 #include <nav_msgs/Odometry.h>
-//#include <nav_msgs/Path.h>
+#include <nav_msgs/Path.h>
 //#include <geometry_msgs/Pose.h>
 #include <tf/tf.h>
 #include <tf/transform_broadcaster.h>
@@ -35,6 +35,7 @@ private:
     ros::Publisher corners_pub_;
     ros::Publisher planes_pub_;
     ros::Publisher odo_pub_;
+    ros::Publisher odo_path_pub_;
 };
 
 #endif //LABLOAM_LIDAR_ODOMETRY_H

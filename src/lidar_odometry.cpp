@@ -10,9 +10,10 @@ LidarOdometry::LidarOdometry():last_corners_(new PointCloudXYZI), last_planes_(n
     last_corner_tree_(new pcl::KdTreeFLANN<PointXYZI>), last_plane_tree_(new pcl::KdTreeFLANN<PointXYZI>){
     current_pose_.setIdentity();
     ros::NodeHandle nh("~");
-    corners_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/odo/less_corner_points", 1);
-    planes_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/odo/less_plane_points", 1);
-    odo_pub_ = nh.advertise<nav_msgs::Odometry>("/odo/lidar_odo", 1);
+    corners_pub_ = nh.advertise<sensor_msgs::PointCloud2>("odo/less_corner_points", 1);
+    planes_pub_ = nh.advertise<sensor_msgs::PointCloud2>("odo/less_plane_points", 1);
+    odo_pub_ = nh.advertise<nav_msgs::Odometry>("odo/lidar_odo", 1);
+    odo_path_pub_ = nh.advertise<nav_msgs::Path>("odo/path", 1);
     ROS_INFO("Lidar odo has been created...");
 }
 
@@ -32,16 +33,6 @@ void LidarOdometry::publish(std_msgs::Header h) {
     tf_q.setZ(q.z());
     trans.setRotation(tf_q);// 不能少
     tb.sendTransform(tf::StampedTransform(trans, h.stamp, "map", "velodyne"));
-    // 发布点云
-    sensor_msgs::PointCloud2 tmp_msg;
-    pcl::toROSMsg(*last_corners_, tmp_msg);
-    tmp_msg.header = h;
-//    tmp_msg.header.frame_id = "velodyne";
-    corners_pub_.publish(tmp_msg);
-    pcl::toROSMsg(*last_planes_, tmp_msg);
-    tmp_msg.header = h;
-//    tmp_msg.header.frame_id = "velodyne";
-    planes_pub_.publish(tmp_msg);
     // 发布odo
     nav_msgs::Odometry odo_msg;
     odo_msg.header.stamp = h.stamp;
@@ -55,6 +46,31 @@ void LidarOdometry::publish(std_msgs::Header h) {
     odo_msg.pose.pose.orientation.y = q.y();
     odo_msg.pose.pose.orientation.z = q.z();
     odo_pub_.publish(odo_msg);
+    // 发布路径
+    static nav_msgs::Path path;
+    path.header.frame_id = "map";
+    geometry_msgs::PoseStamped p;
+    p.header.stamp = h.stamp;
+    p.header.frame_id = "map";
+    p.pose.position.x = t.x();
+    p.pose.position.y = t.y();
+    p.pose.position.z = t.z();
+    p.pose.orientation.w = q.w();
+    p.pose.orientation.x = q.x();
+    p.pose.orientation.y = q.y();
+    p.pose.orientation.z = q.z();
+    path.poses.emplace_back(p);
+    odo_path_pub_.publish(path);
+    // 发布点云
+    sensor_msgs::PointCloud2 tmp_msg;
+    pcl::toROSMsg(*last_corners_, tmp_msg);
+    tmp_msg.header = h;
+//    tmp_msg.header.frame_id = "velodyne";
+    corners_pub_.publish(tmp_msg);
+    pcl::toROSMsg(*last_planes_, tmp_msg);
+    tmp_msg.header = h;
+//    tmp_msg.header.frame_id = "velodyne";
+    planes_pub_.publish(tmp_msg);
 }
 
 void LidarOdometry::work(const DataGroupPtr& data_group) {
