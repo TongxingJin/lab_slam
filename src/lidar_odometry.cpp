@@ -7,7 +7,7 @@
 #include "data_defination.hpp"
 
 LidarOdometry::LidarOdometry():last_corners_(new PointCloudXYZI), last_planes_(new PointCloudXYZI),
-    last_corner_tree_(new pcl::KdTreeFLANN<PointXYZI>), last_plane_tree_(new pcl::KdTreeFLANN<PointXYZI>){
+    scan2scan_register_(deskew_){
     current_pose_.setIdentity();
     ros::NodeHandle nh("~");
     corners_pub_ = nh.advertise<sensor_msgs::PointCloud2>("odo/less_corner_points", 1);
@@ -23,7 +23,6 @@ void LidarOdometry::publish(std_msgs::Header h) {
     static tf::TransformBroadcaster tb;
     tf::Transform trans;
     Eigen::Vector3d t(current_pose_.matrix().block<3, 1>(0, 3));
-    LOG(INFO) << "global trans: " << t;
     trans.setOrigin(tf::Vector3(t(0), t(1), t(2)));
     Eigen::Quaterniond q(current_pose_.rotation());
     tf::Quaternion tf_q;
@@ -65,11 +64,9 @@ void LidarOdometry::publish(std_msgs::Header h) {
     sensor_msgs::PointCloud2 tmp_msg;
     pcl::toROSMsg(*last_corners_, tmp_msg);
     tmp_msg.header = h;
-//    tmp_msg.header.frame_id = "velodyne";
     corners_pub_.publish(tmp_msg);
     pcl::toROSMsg(*last_planes_, tmp_msg);
     tmp_msg.header = h;
-//    tmp_msg.header.frame_id = "velodyne";
     planes_pub_.publish(tmp_msg);
 }
 
@@ -77,10 +74,8 @@ void LidarOdometry::work(const DataGroupPtr& data_group) {
     LOG(INFO) << "odo work...";
 //    ROS_INFO("Data center add in odo: %p", DataCenter::Instance());
     if(!is_initialized){
-        last_corners_ = std::move(data_group->less_corner_cloud);
-        last_corner_tree_->setInputCloud(last_corners_);
-        last_planes_ = std::move(data_group->less_plane_cloud);
-        last_plane_tree_->setInputCloud(last_planes_);
+        *last_corners_ = *data_group->less_corner_cloud;
+        *last_planes_ = *data_group->less_plane_cloud;
         is_initialized = true;
         LOG(INFO) << "Odo is initialized...";
         return;
@@ -91,24 +86,28 @@ void LidarOdometry::work(const DataGroupPtr& data_group) {
     PointCloudXYZIPtr current_planes = data_group->plane_cloud;
     LOG(INFO) << "Got data from data_group...";
     // Scan to scan register
-//    scan2scan_register_.reset();// TODO： 记录上一步的结果作为初始值
-//    if(last_corners_ == nullptr)
-//        LOG(FATAL) << "Last corner is nullptr";
-//    if(current_corners == nullptr)
-//        LOG(FATAL) << "Current corners is nullptr";
+    // TODO： 使用上一步的结果作为初始值，会更快，但是如果上一步不太好的话会加快积累
+//    scan2scan_register_.reset();
     LOG(INFO) << "Points size: " << last_corners_->points.size() << ", " << last_planes_->points.size() << ", " <<
             current_corners->points.size() << ", " << current_planes->points.size();
     // TODO:初始外提
-    scan2scan_register_.align(last_corners_, last_planes_, last_corner_tree_, last_plane_tree_, current_corners, current_planes);
+    Eigen::Affine3d init_pose = Eigen::Affine3d::Identity();
+    if(use_const_velo_) init_pose = last_scan2scan_pose_;
+    scan2scan_register_.align(last_corners_, last_planes_, current_corners, current_planes, init_pose);
     // Integrate pose
-    Eigen::Affine3d delta_trans = scan2scan_register_.getTransform();
-    LOG(INFO) << "delta trans: " << delta_trans.matrix().block<3, 1>(0, 3);
-    current_pose_ = current_pose_ * delta_trans;
+    Eigen::Affine3d delta_pose = scan2scan_register_.getTransform();
+    current_pose_ = current_pose_ * delta_pose;
+    last_scan2scan_pose_ = delta_pose;
     // Prepare data for next loop
-    scan2scan_register_.cloudProjToEnd<PointXYZI>(data_group->less_corner_cloud, last_corners_);
-    last_corner_tree_->setInputCloud(last_corners_);
-    scan2scan_register_.cloudProjToEnd<PointXYZI>(data_group->less_plane_cloud, last_planes_);
-    last_plane_tree_->setInputCloud(last_planes_);
+    if(deskew_){
+        scan2scan_register_.cloudProjToEnd(data_group->less_corner_cloud, last_corners_);
+        scan2scan_register_.cloudProjToEnd(data_group->less_plane_cloud, last_planes_);
+    }else{
+        *last_corners_ = *data_group->less_corner_cloud;
+        *last_planes_ = *data_group->less_plane_cloud;
+    }
+//    last_corner_tree_->setInputCloud(last_corners_);
+//    last_plane_tree_->setInputCloud(last_planes_);
     publish(data_group->h);
     odo_work_timer.end();
 }

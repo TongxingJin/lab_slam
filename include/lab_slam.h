@@ -24,6 +24,7 @@ public:
     void lidarOdoWork();
 private:
     std::string topic_name_ = std::string("/points_raw");// velodyne_points
+//    std::string topic_name_ = std::string("/velodyne_points");// velodyne_points
     ros::Subscriber cloud_msg_sub_;
     PreProcessor pre_processor_;
     LidarOdometry lidar_odo_;

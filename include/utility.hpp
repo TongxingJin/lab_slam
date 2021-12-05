@@ -9,6 +9,7 @@
 #include <pcl/common/transforms.h>
 #include <glog/logging.h>
 #include <chrono>
+#include <queue>
 
 struct VelodynePointXYZIRT
 {
@@ -25,6 +26,7 @@ POINT_CLOUD_REGISTER_POINT_STRUCT (VelodynePointXYZIRT,
 typedef pcl::PointXYZI PointXYZI;
 typedef pcl::PointCloud<PointXYZI> PointCloudXYZI;
 typedef pcl::PointCloud<PointXYZI>::Ptr PointCloudXYZIPtr;
+typedef pcl::PointCloud<PointXYZI>::ConstPtr PointCloudXYZIConstPtr;
 
 typedef VelodynePointXYZIRT PointVelodyne;
 typedef pcl::PointCloud<PointVelodyne> PointCloudVelodyne;
@@ -79,4 +81,32 @@ private:
     std::chrono::steady_clock::time_point start_timepoint_;
     std::string name_;
 };
+
+#define ANG2RAD (1.0 / 180.0 * M_PI)
+#define RAD2ANG (1 / M_PI* 180.0)
+//using
+//typedef
+
+// hpp中定义全局函数
+// #pragma once等函数虽然可以避免重复include
+// 但针对的是a include b和c，b也include c，那么a就会include c两次的问题
+// 但是如果d也include了c，且c中定义了全局函数，那么这个全局函数在a，b，d中都会被声明和定义，在全局域重复
+// inline则使得函数直接被“粘贴”在了调用处
+inline float findKthLargestValue(const std::vector<float>& values, int k){
+    std::priority_queue<float, std::vector<float>, std::greater<float> > q;
+    for(const float& value : values){
+        if(q.size() < k){
+            q.push(value);
+        }else{
+            if(value > q.top()){// !!!
+                q.pop();// pop出当前最大k个中的最小值
+                q.push(value);
+            }
+        }
+    }
+    return q.top();
+}
+
+
 #endif
+

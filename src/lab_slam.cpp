@@ -10,21 +10,19 @@ LabSLAM::LabSLAM() {
 }
 
 void LabSLAM::msgCallback(const sensor_msgs::PointCloud2::ConstPtr& msg) {
-//    PointCloudVelodynePtr cloud(new PointCloudVelodyne);
-//    pcl::fromROSMsg(*msg, *cloud);
-//    int max_line = -1;
-//    int max_num = 0;
-//    for(auto point : cloud->points){
-//        if(point.ring == 0){
-//            max_num++;
-//        }
-//        if(point.ring > max_line)
-//            max_line = point.ring;
-//    }
     LOG(INFO) << "Current msg timestamp: " << std::fixed << std::setprecision(6) << msg->header.stamp.toSec();
+//    // debug
+//    {
+//        static int index = 0;
+//        static sensor_msgs::PointCloud2::Ptr tmp_msg(new sensor_msgs::PointCloud2);
+//        if(index == 0){
+//            *tmp_msg = *msg;
+//        }
+//        tmp_msg->header.stamp = ros::Time(tmp_msg->header.stamp.toSec() + 0.1 * index++);
+//    }
     velodyne_msg_mutex_.lock();
     velodyne_msgs_.emplace_back(msg);
-//    headers_.emplace_back(msg->header);
+//    velodyne_msgs_.emplace_back(tmp_msg);
     velodyne_msg_mutex_.unlock();
     msg_condit_var_.notify_all();
     LOG(INFO) << "Current cloud size: " << velodyne_msgs_.size();
@@ -45,7 +43,6 @@ void LabSLAM::preprocessWork() {
         std::unique_lock<std::mutex> msg_unique_lock(velodyne_msg_mutex_);
         // 以下，通过函数体返回了想要的数据cloud
         msg_condit_var_.wait(msg_unique_lock, [this, &cloud]()->bool{if(velodyne_msgs_.empty()) {return false;} cloud = velodyne_msgs_.front(); velodyne_msgs_.pop_front(); return true;});
-        LOG(INFO) << "Get msg";
         msg_unique_lock.unlock();
         DataGroupPtr data_group(new DataGroup);
         Timer t("preprocess work ");
@@ -78,10 +75,14 @@ void LabSLAM::lidarOdoWork() {
 }
 
 int main(int argc, char** argv){
+    google::InitGoogleLogging("LabSLAM");
+//    google::SetLogDestination(google::INFO, "/home/jin/Documents/lab_slam_ws/src/lab_slam/log/my_log_");
+//    google::SetStderrLogging(google::INFO);
+    google::LogToStderr();
     ros::init(argc, argv, "LabSLAM");
     LabSLAM lab_slam;
     std::thread pre_process(&LabSLAM::preprocessWork, &lab_slam);
-//    std::thread lidar_odo(&LabSLAM::lidarOdoWork, &lab_slam);
+    std::thread lidar_odo(&LabSLAM::lidarOdoWork, &lab_slam);
     ros::spin();
     return 0;
 }

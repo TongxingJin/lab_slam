@@ -6,6 +6,7 @@
 #include "pre_processor.h"
 #include "cost_function.hpp"
 #include "data_defination.hpp"
+//#define GROUND_SEGMENTATION
 
 PreProcessor::PreProcessor(){
     // 若topic_name中不含/,则前面自动补充当前node名称
@@ -86,39 +87,45 @@ void PreProcessor::nanFilter(const typename pcl::PointCloud<Point> &cloud_in, ty
     cloud_out.resize(count);
 }
 
-void PreProcessor::minimumRangeFilter(const PointCloudVelodynePtr& cloud_in, const PointCloudVelodynePtr& cloud_out, float minimum_range){
+void PreProcessor::rangeFilter(const PointCloudVelodynePtr& cloud_in, const PointCloudVelodynePtr& cloud_out, float minimum_range, float maximum_range){
     if(cloud_out != cloud_in){
         cloud_out->header = cloud_in->header;
         cloud_out->points.resize(cloud_in->points.size());
     }
-    int meaning_index = 0;
+    int index = 0;
+    float square_min = minimum_range * minimum_range;
+    float square_max = maximum_range * maximum_range;
     for(size_t id = 0; id < cloud_in->points.size(); ++id){
         const auto& point = cloud_in->points[id];
-        if(point.x * point.x + point.y * point.y + point.z * point.z > minimum_range * minimum_range){
-            cloud_out->points[meaning_index++] = cloud_in->points[id];
+        float square_range = point.x * point.x + point.y * point.y + point.z * point.z;
+        if(square_range < square_min || square_range > square_max){
+            continue;
         }
+        cloud_out->points[index++] = cloud_in->points[id];
     }
-    cloud_out->resize(meaning_index);// 自动调整points/height/width
+    cloud_out->resize(index);// 自动调整points/height/width
 }
 
 
 void PreProcessor::filter() {
     std::vector<int> index;
-//    pcl::removeNaNFromPointCloud(*cloud_, *cloud_, index);
+//    pcl::removeNaNFromPointCloud<PointVelodyne>(*cloud_, *cloud_, index);
     nanFilter(*cloud_, *cloud_);
-//    pcl::PassThrough<PointType> pass_filter;
-//    pass_filter.setFilterFieldName();
-    minimumRangeFilter(cloud_, cloud_, 0.5);
+    rangeFilter(cloud_, cloud_, 2, 150);
 }
 
 void PreProcessor::pointIndex(const PointVelodyne& point, int& i, int& j){
     i = static_cast<int>(point.ring);
-    // x负方向为0,逆时针递增
 //    float resolution = 0.0;
 //    j = HORIZON_SCAN_ * 0.5 - round((atan2(point.x, point.y) - M_PI_2) / (2 * M_PI) * HORIZON_SCAN_);// 在这里round的括号一定要搞清楚
-    j = int((atan2(point.x, point.y) + M_PI) / (2 * M_PI) * HORIZON_SCAN_);
-    if(j < 0) j = 0;
-    if(j >= HORIZON_SCAN_)  j = HORIZON_SCAN_ - 1;
+    j = int((atan2(point.x, point.y) + M_PI) / (2 * M_PI) * HORIZON_SCAN_);// 右侧为0列.顺时针旋转为正
+    if(j < 0){
+        LOG(WARNING) << "J < 0: " << j;
+        j += HORIZON_SCAN_;
+    }else if(j >= HORIZON_SCAN_){
+        LOG(WARNING) << "J > HORIZON_SCAN_: " << j;
+        j -= HORIZON_SCAN_;
+    }
 }
 
 void PreProcessor::projectToImage(){
@@ -136,7 +143,7 @@ void PreProcessor::projectToImage(){
             im_point.x = point.x;
             im_point.y = point.y;
             im_point.z = point.z;
-            im_point.intensity = point.ring + 0.1 * point.time;
+            im_point.intensity = point.ring + point.time;// point.time最大在0.1左右
             if(point.time > max_time){
                 max_time = point.time;
             }
@@ -145,8 +152,40 @@ void PreProcessor::projectToImage(){
             count++;
         }
     }
+
+    {
+        // 输出深度图，从上至下行号递增；从右侧开始顺时针旋转，列数递增
+        static int index = 0;
+        cv::Mat m(cv::Size(HORIZON_SCAN_, N_SCAN_), CV_8UC1);
+        float max_depth = 0.01;
+        for (int row = 0; row < N_SCAN_; ++row) {
+            for (int col = 0; col < HORIZON_SCAN_; ++col) {
+                max_depth = range_image_(row, col) > max_depth ? range_image_(row, col) : max_depth;
+            }
+        }
+//        LOG(INFO) << "MAX DEPTH: " << max_depth;
+        for (int row = 0; row < N_SCAN_; ++row) {
+            for (int col = 0; col < HORIZON_SCAN_; ++col) {
+                if (range_image_(row, col) <= 0) {
+                    m.at<uchar>(N_SCAN_ - 1 - row, col) = 0;
+                } else {
+                    float ratio = range_image_(row, col) / max_depth;
+                    if (ratio > 1) {
+                        LOG(WARNING) << "Ratio > 1!";
+                        ratio = 1.0;
+                    }
+                    m.at<uchar>(N_SCAN_ - 1 - row, col) = int(ratio * 255);
+                }
+            }
+        }
+        cv::applyColorMap(m, m, cv::COLORMAP_RAINBOW);
+        std::string path =
+                "/home/jin/Documents/lab_slam_ws/src/lab_slam/tmp/depth_pic/" + std::to_string(index) + ".bmp";
+        cv::imwrite(path, m);
+        index++;
+    }
 //    LOG(INFO) << "---------------MAX TIMESTAMP: " << max_time;
-    LOG(INFO) << "Duplicate count: " << count;
+//    LOG(INFO) << "Duplicate count: " << count;
 }
 
 void PreProcessor::markGround(){
@@ -196,7 +235,7 @@ void PreProcessor::componentCluster(int row, int col){
             if(cluster_label_(next_pos.first, next_pos.second) != 0){
                 continue;
             }
-            float resolution = (mov.first == 0) ? M_PI / 900.0 : M_PI / 180.0;// TODO：垂直1度？
+            float resolution = (mov.first == 0) ? 0.2 * ANG2RAD : ANG2RAD;// TODO：垂直1度？
             float current_depth = range_image_(current_pos.first, current_pos.second);
             float next_depth = range_image_(next_pos.first, next_pos.second);
             float large_depth = std::max(current_depth, next_depth);
@@ -205,7 +244,7 @@ void PreProcessor::componentCluster(int row, int col){
             if(angle < 0){
                 LOG(FATAL) << "Minus angle!!!";
             }
-            if(angle > 35.0 / 180.0 * M_PI){ // 下调有助于聚类更多的较大入射角面上的点云，上调有助于筛选更稳定的面上的点
+            if(angle > 20.0 / 180.0 * M_PI){ // 下调有助于聚类更多的较大入射角面上的点云，上调有助于筛选更稳定的面上的点
                 cluster_label_(next_pos.first, next_pos.second) = component_index_;
                 coordinates.emplace_back(next_pos);
                 lines[next_pos.first] = true;
@@ -228,6 +267,7 @@ void PreProcessor::componentCluster(int row, int col){
 }
 
 void PreProcessor::markGroundAndComponentCluster(){
+    LOG(INFO) << "/////////////////////Start seg";
     markGround();// 标记地面，在cluster_label_中将地面和无效像素标记为-1
     for(int row = 0; row < N_SCAN_; ++row){
         for(int col = 0; col < HORIZON_SCAN_; ++col){
@@ -255,22 +295,28 @@ void PreProcessor::rearrangeBackCloud() {
                 count3++;
             }
             // compact
+#ifdef GROUND_SEGMENTATION
             if(range_image_(row, col) != -1 && (ground_label_(row, col) == 1 || cluster_label_(row, col) > 0)){
+#else
+            if(range_image_(row, col) != -1){
+#endif
                 auto point = cloud_image_->points[row * HORIZON_SCAN_ + col];
                 full_cloud_->push_back(point);
                 ranges_.push_back(range_image_(row, col));
                 col_index_.push_back(col);
+#ifdef GROUND_SEGMENTATION
                 if(ground_label_(row, col) == 1){
                     ground_flags_.push_back(true);
-                    point.intensity = 50;
+//                    point.intensity = 50;
                 }else{
                     ground_flags_.push_back(false);
-                    point.intensity = 100;
+//                    point.intensity = 100;
                 }
-                if(ground_label_(row, col) == 1 && cluster_label_(row, col) > 0){
-                    LOG(WARNING) << "Ground and cluster!!!";
-                }
-                ground_and_clusters_->push_back(point);
+//                if(ground_label_(row, col) == 1 && cluster_label_(row, col) > 0){
+//                    LOG(WARNING) << "Ground and cluster!!!";
+//                }
+//                ground_and_clusters_->push_back(point);
+#endif
             }
         }
         end_index_[row] = full_cloud_->size() - 1 - 5;
@@ -319,7 +365,11 @@ void PreProcessor::excludeOcculded() {
                 float diff1 = std::fabs(ranges_[index] - ranges_[index - 1]);
                 float diff2 = std::fabs(ranges_[index] - ranges_[index + 1]);
                 float range = ranges_[index];
-                if(diff1 > 0.02 * range && diff2 > 0.02 * range){// 拖尾也会被去掉
+                if(diff1 > 0.02 * range && diff2 > 0.02 * range){// 拖尾也会被去掉0.02 * range
+                    selected_[index] = true;
+                }
+                // 防止单个点在列向聚类，且横向相邻点深度近似
+                if(abs(col_index_[index] - col_index_[index - 1]) > 5 && abs(col_index_[index] - col_index_[index + 1]) > 5){
                     selected_[index] = true;
                 }
             }
@@ -344,15 +394,18 @@ void PreProcessor::extractFeatures() {
                 size_t point_id = curve_id_[curve_id].second;
                 float curve = curve_id_[curve_id].first;
                 if(curve < corner_thre_) break;// 后面的只会更小
+#ifdef GROUND_SEGMENTATION
                 if(!selected_[point_id] && !ground_flags_.at(point_id)){
+#else
+                if(!selected_[point_id]){
+#endif
                     if(corner_count < 4){
                         corner_points_->push_back(full_cloud_->points[point_id]);
                         less_corner_points_->push_back(full_cloud_->points[point_id]);
-                    }else if(corner_count < 20){
+                    }else if(corner_count < 15){
                         less_corner_points_->push_back(full_cloud_->points[point_id]);
-                    }else{
-                        break;
                     }
+                    if(++corner_count >= 15) break;
                     // 附近都不能再被选中
                     selected_[point_id] = true;
                     int offset = 1;
@@ -367,7 +420,6 @@ void PreProcessor::extractFeatures() {
                         selected_[point_id - offset] = true;
                         offset++;
                     }
-                    if(++corner_count >= 20) break;
                 }
             }
             int plane_count = 0;
@@ -375,7 +427,11 @@ void PreProcessor::extractFeatures() {
                 size_t point_id = curve_id_[curve_id].second;
                 float curve = curve_id_[curve_id].first;
                 if(curve > plane_thre_) break;
+#ifdef GROUND_SEGMENTATION
                 if(!selected_[point_id] && ground_flags_.at(point_id)){
+#else
+                if(!selected_[point_id]){
+#endif
                     plane_points_->push_back(full_cloud_->points[point_id]);
                     less_plane_points_->push_back(full_cloud_->points[point_id]);
                     // 附近都不能再被选中
@@ -392,12 +448,13 @@ void PreProcessor::extractFeatures() {
                         selected_[point_id - offset] = true;
                         offset++;
                     }
-                    if(++plane_count > 8) break;
+                    if(++plane_count > 6) break;
                 }
             }
             for(int curve_id = sector_end_id - 1; curve_id >= sector_start_id; --curve_id){
                 size_t point_id = curve_id_[curve_id].second;
-                if(!selected_[point_id] && ground_flags_.at(point_id)){
+                if(curve_id_[curve_id].first > plane_thre_) break;
+                if(!selected_[point_id]){
                     plane_scan->push_back(full_cloud_->points[point_id]);
                 }
             }
@@ -435,7 +492,7 @@ void PreProcessor::publishSaveFeas(std_msgs::Header h, const DataGroupPtr& data_
     }
 
     double time_stamp = h.stamp.toSec();
-    LOG(INFO) << "Time stamp: " << std::fixed << std::setprecision(3) << time_stamp << " seconds.";
+//    LOG(INFO) << "Time stamp: " << std::fixed << std::setprecision(3) << time_stamp << " seconds.";
     data_group->time_stamp = time_stamp;
     data_group->corner_cloud = std::move(corner_points_);// corner_points_依然是一个可以指向cloud的指针变量，可以被取地址，但是其内容已经被置空，需要重新被reset才能使用
     corner_points_.reset(new PointCloudXYZI);
@@ -459,11 +516,11 @@ void PreProcessor::publishPointCloudFullCloud(std_msgs::Header h){
         cloud_msg.header = h;
         full_cloud_pub_.publish(cloud_msg);// 发布地面和聚类点，强度整数部分为原始强度
     }
-    if(ground_and_clusters_pub_.getNumSubscribers() != 0){
-        pcl::toROSMsg(*ground_and_clusters_, cloud_msg);
-        cloud_msg.header = h;
-        ground_and_clusters_pub_.publish(cloud_msg);// 为了区分地面和聚类点，强度不同
-    }
+//    if(ground_and_clusters_pub_.getNumSubscribers() != 0){
+//        pcl::toROSMsg(*ground_and_clusters_, cloud_msg);
+//        cloud_msg.header = h;
+//        ground_and_clusters_pub_.publish(cloud_msg);// 为了区分地面和聚类点，强度不同
+//    }
 }
 
 //void PreProcessor::cloudCallback(const sensor_msgs::PointCloud2::ConstPtr& cloud_msg){
@@ -472,7 +529,6 @@ void PreProcessor::publishPointCloudFullCloud(std_msgs::Header h){
 //    LOG(INFO) << "Msg size after push: " << msgs_.size();
 //    msg_mutex_.unlock();
 //}
-
 // 对于sensor_msgs::PointCloud2型的消息，field中可以自定义不同的成员变量，
 // 进一步，在pcl中定义新的Point类型，且其成员变量与sensor_msgs::PointCloud2严格对齐的情况下，
 // pcl的pcl::fromROSMsg等函数，可以正常完成运算
@@ -480,16 +536,25 @@ void PreProcessor::work(const sensor_msgs::PointCloud2::ConstPtr& velodyne_msg, 
     LOG(INFO) << "Handle new msg---------------";
     resetParam();
     pcl::fromROSMsg(*velodyne_msg, *cloud_);
+    static int index = 0;
+    pcl::io::savePCDFileBinary("/home/jin/Documents/lab_slam_ws/src/lab_slam/tmp/pcd/" + std::to_string(index) + ".pcd", *cloud_);
+    index++;
     filter();
     // 投影到image中，会存在Nan位置，同时点的类型从Velodyne->PointXYZI
     projectToImage();
     // 提取地面，对非地面点进行聚类
     // 这里的地面和聚类其实并没有本质上的区别，都是为了获取稳定的面上的点
     // 非地面点可以通过小的入射角进行聚类筛选，但是地面点普遍存在较大的入射角，因此在纵向上进行特殊的处理和判断
+#ifdef GROUND_SEGMENTATION
+//#pragma message("seg ")
     markGroundAndComponentCluster();
+    LOG(INFO) << "/////////////////////////Do ground segmentation!";
+#else
+//#pragma message("not seg")
+#endif
     // 更加紧凑，同时记录下每个线的起止索引，每个点所在的列
     rearrangeBackCloud();
-//    publishPointCloudFullCloud(velodyne_msg->header);
+    publishPointCloudFullCloud(velodyne_msg->header);
     // 计算曲率
     calcuCurvature();
     // 处理遮挡和噪声

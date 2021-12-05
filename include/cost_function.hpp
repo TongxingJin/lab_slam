@@ -25,8 +25,8 @@ struct LineFactor{
     template <typename T>
     bool operator()(const T* q, const T* t, T* residual) const {
         Eigen::Quaternion<T> current_q(q[3], q[0], q[1], q[2]);// 要注意顺序
-//        Eigen::Quaternion<T> identity_q = Eigen::Quaternion<T>(T(1), T(0), T(0), T(0));
-//        current_q = identity_q.slerp(T(inter_coeff), current_q);// 处处注意T
+        Eigen::Quaternion<T> identity_q = Eigen::Quaternion<T>(T(1), T(0), T(0), T(0));
+        current_q = identity_q.slerp(T(inter_coeff), current_q);// 处处注意T
         Eigen::Matrix<T, 3, 1> current_t(T(inter_coeff) * t[0], T(inter_coeff) * t[1], T(inter_coeff) * t[2]);
 
         Eigen::Matrix<T, 3, 1> cp(T(current_point.x()), T(current_point.y()), T(current_point.z()));
@@ -40,6 +40,7 @@ struct LineFactor{
         residual[0] = height(0) / T(ab_norm);
         residual[1] = height(1) / T(ab_norm);
         residual[2] = height(2) / T(ab_norm);
+//        LOG(INFO) << "Error: " << residual[0] << ", " << residual[1] << ", " << residual[2];
         return true;
     }
 

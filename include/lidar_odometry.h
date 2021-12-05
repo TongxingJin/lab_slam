@@ -25,12 +25,15 @@ public:
 
     void publish(std_msgs::Header h);
 private:
+    bool deskew_ = false;
+    bool use_const_velo_ = true;
     FeaturesRegister scan2scan_register_;
+    Eigen::Affine3d last_scan2scan_pose_ = Eigen::Affine3d::Identity();
     Eigen::Affine3d current_pose_;
     PointCloudXYZIPtr last_corners_;
     PointCloudXYZIPtr last_planes_;
-    pcl::KdTreeFLANN<PointXYZI>::Ptr last_corner_tree_;
-    pcl::KdTreeFLANN<PointXYZI>::Ptr last_plane_tree_;
+//    pcl::KdTreeFLANN<PointXYZI>::Ptr last_corner_tree_;
+//    pcl::KdTreeFLANN<PointXYZI>::Ptr last_plane_tree_;
     bool is_initialized = false;
     ros::Publisher corners_pub_;
     ros::Publisher planes_pub_;

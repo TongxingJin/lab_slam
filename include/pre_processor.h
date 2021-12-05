@@ -18,6 +18,8 @@
 #include <mutex>
 #include <thread>
 #include "data_defination.hpp"
+#include <opencv2/opencv.hpp>
+//#define GROUND_SEGMENTATION
 
 /* Function:
  * 订阅激光雷达原始点云，剔除nan和近距离内的点，并根据曲率提取角点和面点
@@ -63,8 +65,8 @@ private:
     // 特征提取
     std::vector<std::pair<float, size_t> > curve_id_;
     std::vector<bool> selected_;// 被排除掉或者已经被选中过的点
-    float corner_thre_ = 1.0;
-    float plane_thre_ = 0.01;
+    float corner_thre_ = 1;
+    float plane_thre_ = 0.005;
     pcl::VoxelGrid<PointXYZI> scan_down_sample_filter_;
     PointCloudXYZIPtr corner_points_;
     PointCloudXYZIPtr less_corner_points_;
@@ -74,7 +76,7 @@ private:
     void pointIndex(const PointVelodyne& point, int& i, int& j);
     template <typename Point>
     void nanFilter(const typename pcl::PointCloud<Point>& cloud_in, typename pcl::PointCloud<Point>& cloud_out);
-    void minimumRangeFilter(const PointCloudVelodynePtr& cloud_in, const PointCloudVelodynePtr& cloud_out, float minimum_range);
+    void rangeFilter(const PointCloudVelodynePtr& cloud_in, const PointCloudVelodynePtr& cloud_out, float minimum_range, float maximum_range);
     void filter();
     template <typename PointType>
     float pointRange(PointType point){
