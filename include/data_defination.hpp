@@ -16,6 +16,8 @@ struct DataGroup{
     PointCloudXYZIPtr plane_cloud;
     PointCloudXYZIPtr less_plane_cloud;
     std_msgs::Header h;
+    // debug
+    sensor_msgs::PointCloud2::ConstPtr cloud_msg;
     bool is_finished = false;
 };
 typedef boost::shared_ptr<DataGroup> DataGroupPtr;

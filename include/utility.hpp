@@ -23,6 +23,19 @@ POINT_CLOUD_REGISTER_POINT_STRUCT (VelodynePointXYZIRT,
                                    (float, x, x) (float, y, y) (float, z, z) (float, intensity, intensity)
                                            (uint16_t, ring, ring) (float, time, time)
 )
+
+struct VelodynePointXYZIR
+{
+    PCL_ADD_POINT4D;
+    PCL_ADD_INTENSITY;
+    uint16_t ring;
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+} EIGEN_ALIGN16;
+POINT_CLOUD_REGISTER_POINT_STRUCT (VelodynePointXYZIR,
+                                   (float, x, x) (float, y, y) (float, z, z) (float, intensity, intensity)
+                                           (uint16_t, ring, ring)
+)
+
 typedef pcl::PointXYZI PointXYZI;
 typedef pcl::PointCloud<PointXYZI> PointCloudXYZI;
 typedef pcl::PointCloud<PointXYZI>::Ptr PointCloudXYZIPtr;
@@ -32,8 +45,12 @@ typedef VelodynePointXYZIRT PointVelodyne;
 typedef pcl::PointCloud<PointVelodyne> PointCloudVelodyne;
 typedef pcl::PointCloud<PointVelodyne>::Ptr PointCloudVelodynePtr;
 
+typedef VelodynePointXYZIR PointVelodyne2;// 没有timestamp
+typedef pcl::PointCloud<PointVelodyne2> PointCloudVelodyne2;
+typedef pcl::PointCloud<PointVelodyne2>::Ptr PointCloudVelodynePtr2;
+
 template <typename Point>
-Eigen::Vector3d pointToEigenVector(const Point& point){
+Eigen::Vector3d p2v(const Point& point){
     Eigen::Vector3d vector;
     vector.x() = point.x;
     vector.y() = point.y;
@@ -52,7 +69,7 @@ Eigen::Vector3d pointToEigenVector(const Point& point){
 
 template <typename Point>
 Point pointTransform(Point point, Eigen::Affine3d trans){
-    Eigen::Vector3d transformed_pose = (trans.rotation() * pointToEigenVector(point) + trans.matrix().block<3, 1>(0, 3));
+    Eigen::Vector3d transformed_pose = (trans.rotation() * p2v(point) + trans.matrix().block<3, 1>(0, 3));
     Point result_point;
     result_point.x = transformed_pose.x();
     result_point.y = transformed_pose.y();
@@ -63,7 +80,7 @@ Point pointTransform(Point point, Eigen::Affine3d trans){
 
 template <typename Point>
 double pointDis(const Point& p1, const Point& p2){
-    return (pointToEigenVector(p1) - pointToEigenVector(p2)).norm();
+    return (p2v(p1) - p2v(p2)).norm();
 }
 
 class Timer{

@@ -45,12 +45,12 @@ void LabSLAM::preprocessWork() {
         msg_condit_var_.wait(msg_unique_lock, [this, &cloud]()->bool{if(velodyne_msgs_.empty()) {return false;} cloud = velodyne_msgs_.front(); velodyne_msgs_.pop_front(); return true;});
         msg_unique_lock.unlock();
         DataGroupPtr data_group(new DataGroup);
-        Timer t("preprocess work ");
+        Timer t("preprocess work");
         pre_processor_.work(cloud, data_group);
         t.end();
         data_mutex_.lock();
         data_.push_back(data_group);
-        LOG(INFO) << "Data group size after preprocess: " << data_.size();
+//        LOG(INFO) << "Data group size after preprocess: " << data_.size();
         data_mutex_.unlock();
         data_condit_var_.notify_all();
     }
@@ -76,9 +76,11 @@ void LabSLAM::lidarOdoWork() {
 
 int main(int argc, char** argv){
     google::InitGoogleLogging("LabSLAM");
-//    google::SetLogDestination(google::INFO, "/home/jin/Documents/lab_slam_ws/src/lab_slam/log/my_log_");
-//    google::SetStderrLogging(google::INFO);
-    google::LogToStderr();
+    google::SetLogDestination(google::INFO, "/home/jin/Documents/lab_slam_ws/src/lab_slam/log/my_log_");
+    google::SetStderrLogging(google::INFO);
+//    FLAGS_alsologtostderr = true;
+//    FLAGS_colorlogtostderr = true;
+//    google::LogToStderr();
     ros::init(argc, argv, "LabSLAM");
     LabSLAM lab_slam;
     std::thread pre_process(&LabSLAM::preprocessWork, &lab_slam);

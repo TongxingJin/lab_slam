@@ -17,7 +17,7 @@
 
 // 如果不需要插值进行畸变校正，那么s不赋值即可
 struct LineFactor{
-    LineFactor(Eigen::Vector3d pa, Eigen::Vector3d pb, Eigen::Vector3d p, double s = 1.0):last_point_a(pa), \
+    LineFactor(Eigen::Vector3d pa, Eigen::Vector3d pb, Eigen::Vector3d p, double s):last_point_a(pa), \
         last_point_b(pb), current_point(p), inter_coeff(s){
         ab_norm = (last_point_b - last_point_a).norm();
     }
@@ -36,15 +36,19 @@ struct LineFactor{
         Eigen::Matrix<T, 3, 1> lpb(T(last_point_b.x()), T(last_point_b.y()), T(last_point_b.z()));
 
         Eigen::Matrix<T, 3, 1> height = (lpb - lpa).cross(current_global_point - lpa);
-//        Eigen::Matrix<T, 3, 1> delta = lpb - lpa;
         residual[0] = height(0) / T(ab_norm);
         residual[1] = height(1) / T(ab_norm);
         residual[2] = height(2) / T(ab_norm);
+//        Eigen::Matrix<T, 3, 1> nu = (current_global_point - lpa).cross(current_global_point - lpb);// 为什么不直接取模长,下面直接取高呢?
+//        Eigen::Matrix<T, 3, 1> de = lpa - lpb;
+//
+//        residual[0] = nu.x() / de.norm();
+//        residual[1] = nu.y() / de.norm();
+//        residual[2] = nu.z() / de.norm();
 //        LOG(INFO) << "Error: " << residual[0] << ", " << residual[1] << ", " << residual[2];
         return true;
     }
 
-    // 这里要求pb-pa是单位向量
     static ceres::CostFunction* create(Eigen::Vector3d pa, Eigen::Vector3d pb, Eigen::Vector3d p, double s = 1.0){
         return new ceres::AutoDiffCostFunction<LineFactor, 3, 4, 3>(new LineFactor(pa, pb, p, s));
     }
@@ -56,7 +60,7 @@ struct LineFactor{
 // For every given point, and plane {plane_norm, d} with plane_norm normalized in advance,
 // the error is plane_norm.dot(point) + d
 struct PlaneFactor{
-    PlaneFactor(Eigen::Vector3d plane_norm, double dis, Eigen::Vector3d input_point, double s = 1):plane_norm_(plane_norm),
+    PlaneFactor(Eigen::Vector3d plane_norm, double dis, Eigen::Vector3d input_point, double s):plane_norm_(plane_norm),
         dis_(dis), current_point_(input_point), inter_coeff_(s){}
 
     template <typename T>

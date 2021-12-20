@@ -28,7 +28,9 @@ find_package(OpenCV REQUIRED)
 #)
 
 include_directories(include ${catkin_INCLUDE_DIRS} ${Eigen_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS} ${GTSAM_INCLUDE_DIR} ${CERES_INCLUDE_DIRS} ${GLOG_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
-#message(STATUS ${CERES_INCLUDE_DIRS})
+message(STATUS ${CERES_INCLUDE_DIRS})
+message(STATUS ${GLOG_INCLUDE_DIRS})
+
 #add_executable(my_test main.cpp)
 
 #add_executable(IMU_odo IMU_odo.cpp)

@@ -35,7 +35,7 @@ public:
     void cloudCallback(const sensor_msgs::PointCloud2::ConstPtr& cloud_msg);
     void work(const sensor_msgs::PointCloud2::ConstPtr& velodyne_msg, const DataGroupPtr& data);
 private:
-    std::string topic_name_ = std::string("/points_raw");// velodyne_points
+//    std::string topic_name_ = std::string("/points_raw");// velodyne_points
     int N_SCAN_ = 16;
     int ground_scan_ = 7;
     int HORIZON_SCAN_ = 1800;
