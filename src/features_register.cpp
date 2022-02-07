@@ -22,7 +22,7 @@ void FeaturesRegister::setInitial(const Eigen::Affine3d& initial_pose){
     delta_t_[2] = trans[2];
 }
 
-void FeaturesRegister::setInitial(double const *delta) { // 值不能被改变
+void FeaturesRegister::setInitial(double const *delta) {
     for(int index = 0; index < 4; ++index){
         delta_q_[index] = delta[index];
     }
@@ -276,7 +276,6 @@ bool Scan2ScanMatcher::align(PointCloudXYZIPtr corner_map, PointCloudXYZIPtr pla
         LOG(INFO) << "Delta: " << x << ", " << y << ", " << z << ", " << roll << ", " << pitch << ", " << yaw;
     }
     ite_timer.end();
-    // TODO: 去掉误差最大的一部分，再次优化
     return true;
 }
 
@@ -439,7 +438,6 @@ bool Scan2MapMatcher::align(PointCloudXYZIPtr corner_map, PointCloudXYZIPtr plan
 //        LOG(INFO) << "current opt pose: " << x << ", " << y << ", " << z << ", " << roll << ", " << pitch << ", " << yaw;
 //    }
     ite_timer.end();
-    // TODO: 去掉误差最大的一部分，再次优化
     return true;
 }
 

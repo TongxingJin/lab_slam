@@ -43,11 +43,6 @@ public:
 private:
     std::deque<DataGroupPtr> data_;
 };
-//static std::deque<DataGroupPtr> data_center;
 static std::mutex data_center_mutex;
 
-// class/struct不存在重复定义的问题，但是函数不可以
-//int test(int a){
-//    return a;
-//}
 #endif

@@ -9,10 +9,9 @@
 //#define GROUND_SEGMENTATION
 
 PreProcessor::PreProcessor() {
-    // 若topic_name中不含/,则前面自动补充当前node名称
     ros::NodeHandle nh("~");
 //    cloud_sub_ = nh.subscribe(topic_name_, 5, &PreProcessor::cloudCallback, this);
-    full_cloud_pub_ = nh.advertise<sensor_msgs::PointCloud2>("preprocess/full_cloud", 10);// 如果点云类型设置不正确，rviz接收后会崩
+    full_cloud_pub_ = nh.advertise<sensor_msgs::PointCloud2>("preprocess/full_cloud", 10);
     ground_and_clusters_pub_ = nh.advertise<sensor_msgs::PointCloud2>("preprocess/ground_and_clusters_cloud", 10);
     corners_pub_ = nh.advertise<sensor_msgs::PointCloud2>("preprocess/corner_points", 2);
     planes_pub_ = nh.advertise<sensor_msgs::PointCloud2>("preprocess/plane_points", 2);
@@ -152,8 +151,8 @@ void PreProcessor::filter() {
 void PreProcessor::pointIndex(const PointVelodyne &point, int &i, int &j) {
     i = static_cast<int>(point.ring);
 //    float resolution = 0.0;
-//    j = HORIZON_SCAN_ * 0.5 - round((atan2(point.x, point.y) - M_PI_2) / (2 * M_PI) * HORIZON_SCAN_);// 在这里round的括号一定要搞清楚
-    j = int((atan2(point.x, point.y) + M_PI) / (2 * M_PI) * HORIZON_SCAN_);// 右侧为0列.顺时针旋转为正
+//    j = HORIZON_SCAN_ * 0.5 - round((atan2(point.x, point.y) - M_PI_2) / (2 * M_PI) * HORIZON_SCAN_);
+    j = int((atan2(point.x, point.y) + M_PI) / (2 * M_PI) * HORIZON_SCAN_);
     if (j < 0) {
         LOG(WARNING) << "J < 0: " << j;
         j += HORIZON_SCAN_;
@@ -189,37 +188,37 @@ void PreProcessor::projectToImage() {
         }
     }
 
-    {
-        // 输出深度图，从上至下行号递增；从右侧开始顺时针旋转，列数递增
-        static int index = 0;
-        cv::Mat m(cv::Size(HORIZON_SCAN_, N_SCAN_), CV_8UC1);
-        float max_depth = 0.01;
-        for (int row = 0; row < N_SCAN_; ++row) {
-            for (int col = 0; col < HORIZON_SCAN_; ++col) {
-                max_depth = range_image_(row, col) > max_depth ? range_image_(row, col) : max_depth;
-            }
-        }
-//        LOG(INFO) << "MAX DEPTH: " << max_depth;
-        for (int row = 0; row < N_SCAN_; ++row) {
-            for (int col = 0; col < HORIZON_SCAN_; ++col) {
-                if (range_image_(row, col) <= 0) {
-                    m.at<uchar>(N_SCAN_ - 1 - row, col) = 0;
-                } else {
-                    float ratio = range_image_(row, col) / max_depth;
-                    if (ratio > 1) {
-                        LOG(WARNING) << "Ratio > 1!";
-                        ratio = 1.0;
-                    }
-                    m.at<uchar>(N_SCAN_ - 1 - row, col) = int(ratio * 255);
-                }
-            }
-        }
-        cv::applyColorMap(m, m, cv::COLORMAP_RAINBOW);
-        std::string path =
-                "/home/jin/Documents/lab_slam_ws/src/lab_slam/tmp/depth_pic/" + std::to_string(index) + ".bmp";
-        cv::imwrite(path, m);
-        index++;
-    }
+//     {
+//         // 输出深度图，从上至下行号递增；从右侧开始顺时针旋转，列数递增
+//         static int index = 0;
+//         cv::Mat m(cv::Size(HORIZON_SCAN_, N_SCAN_), CV_8UC1);
+//         float max_depth = 0.01;
+//         for (int row = 0; row < N_SCAN_; ++row) {
+//             for (int col = 0; col < HORIZON_SCAN_; ++col) {
+//                 max_depth = range_image_(row, col) > max_depth ? range_image_(row, col) : max_depth;
+//             }
+//         }
+// //        LOG(INFO) << "MAX DEPTH: " << max_depth;
+//         for (int row = 0; row < N_SCAN_; ++row) {
+//             for (int col = 0; col < HORIZON_SCAN_; ++col) {
+//                 if (range_image_(row, col) <= 0) {
+//                     m.at<uchar>(N_SCAN_ - 1 - row, col) = 0;
+//                 } else {
+//                     float ratio = range_image_(row, col) / max_depth;
+//                     if (ratio > 1) {
+//                         LOG(WARNING) << "Ratio > 1!";
+//                         ratio = 1.0;
+//                     }
+//                     m.at<uchar>(N_SCAN_ - 1 - row, col) = int(ratio * 255);
+//                 }
+//             }
+//         }
+//         cv::applyColorMap(m, m, cv::COLORMAP_RAINBOW);
+//         std::string path =
+//                 "/home/jin/Documents/lab_slam_ws/src/lab_slam/tmp/depth_pic/" + std::to_string(index) + ".bmp";
+//         cv::imwrite(path, m);
+//         index++;
+//     }
 //    LOG(INFO) << "---------------MAX TIMESTAMP: " << max_time;
 //    LOG(INFO) << "Duplicate count: " << count;
 }
@@ -569,9 +568,7 @@ void PreProcessor::publishPointCloudFullCloud(std_msgs::Header h) {
 //    LOG(INFO) << "Msg size after push: " << msgs_.size();
 //    msg_mutex_.unlock();
 //}
-// 对于sensor_msgs::PointCloud2型的消息，field中可以自定义不同的成员变量，
-// 进一步，在pcl中定义新的Point类型，且其成员变量与sensor_msgs::PointCloud2严格对齐的情况下，
-// pcl的pcl::fromROSMsg等函数，可以正常完成运算
+
 void PreProcessor::work(const sensor_msgs::PointCloud2::ConstPtr &velodyne_msg, const DataGroupPtr &datagroup) {
 //    LOG(INFO) << "Handle new msg---------------";
     // debug
@@ -637,7 +634,6 @@ void PreProcessor::work(const sensor_msgs::PointCloud2::ConstPtr &velodyne_msg, 
     // 处理遮挡和噪声
     excludeOcculded();
     extractFeatures();
-//    double time_stamp = 1e-6 * velodyne_cloud->header.stamp;// TODO：确认是否足够大
 //    LOG(INFO) << "Time stamp: " << std::fixed << std::setprecision(3) << time_stamp << " seconds.";
     publishSaveFeas(velodyne_msg->header, datagroup);
 }

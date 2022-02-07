@@ -39,7 +39,7 @@ void LidarOdometry::publish(std_msgs::Header h) {
     tf_q.setX(q.x());
     tf_q.setY(q.y());
     tf_q.setZ(q.z());
-    trans.setRotation(tf_q);// 不能少
+    trans.setRotation(tf_q);
     tb.sendTransform(tf::StampedTransform(trans, h.stamp, "map", "odo"));
     // 发布odo
     nav_msgs::Odometry odo_msg;
@@ -91,7 +91,7 @@ void LidarOdometry::publishOpt(std_msgs::Header h) {
     tf_q.setX(q.x());
     tf_q.setY(q.y());
     tf_q.setZ(q.z());
-    trans.setRotation(tf_q);// 不能少
+    trans.setRotation(tf_q);
     tb.sendTransform(tf::StampedTransform(trans, h.stamp, "map", "velodyne"));
     // 发布odo
     nav_msgs::Odometry odo_msg;
@@ -173,7 +173,7 @@ bool LidarOdometry::work(const DataGroupPtr& data_group, const std::vector<KeyFr
         scan2scan_matcher_.cloudProjToEnd(data_group->less_corner_cloud);
         scan2scan_matcher_.cloudProjToEnd(data_group->less_plane_cloud);
     }
-    last_corners_ = data_group->less_corner_cloud;// 只要没有通过data_group执行过clear操作，这里last_corners_就不会失效
+    last_corners_ = data_group->less_corner_cloud;
     last_planes_ = data_group->less_plane_cloud;
 
     publish(data_group->h);// 如果不重新发布原始点云，也就是说原始点云在tf发布之前就已经发布了，那么有可能导致插值出错点云乱跳

@@ -2,7 +2,6 @@
 // Created by jin on 2021/6/1.
 //
 
-//#include <tkDecls.h>
 #include "lab_slam.h"
 
 LabSLAM::LabSLAM() {
@@ -20,18 +19,8 @@ LabSLAM::LabSLAM() {
 
 void LabSLAM::msgCallback(const sensor_msgs::PointCloud2::ConstPtr& msg) {
     LOG(INFO) << "Current msg timestamp: " << std::fixed << std::setprecision(6) << msg->header.stamp.toSec();
-//    // debug
-//    {
-//        static int index = 0;
-//        static sensor_msgs::PointCloud2::Ptr tmp_msg(new sensor_msgs::PointCloud2);
-//        if(index == 0){
-//            *tmp_msg = *msg;
-//        }
-//        tmp_msg->header.stamp = ros::Time(tmp_msg->header.stamp.toSec() + 0.1 * index++);
-//    }
     velodyne_msg_mutex_.lock();
     velodyne_msgs_.emplace_back(msg);
-//    velodyne_msgs_.emplace_back(tmp_msg);
     velodyne_msg_mutex_.unlock();
     msg_condit_var_.notify_all();
     LOG(INFO) << "Current cloud size: " << velodyne_msgs_.size();
@@ -39,18 +28,8 @@ void LabSLAM::msgCallback(const sensor_msgs::PointCloud2::ConstPtr& msg) {
 
 void LabSLAM::preprocessWork() {
     while(1){
-//        if(velodyne_msgs_.empty()){
-//            sleep(0.01);
-//            LOG(INFO) << "Sleep";
-//            continue;
-//        }
-//        velodyne_msg_mutex_.lock();
-//        sensor_msgs::PointCloud2::ConstPtr cloud = velodyne_msgs_.front();
-//        velodyne_msgs_.pop_front();
-//        velodyne_msg_mutex_.unlock();
         sensor_msgs::PointCloud2::ConstPtr cloud(new sensor_msgs::PointCloud2);
         std::unique_lock<std::mutex> msg_unique_lock(velodyne_msg_mutex_);
-        // 以下，通过函数体返回了想要的数据cloud
         msg_condit_var_.wait(msg_unique_lock, [this, &cloud]()->bool{if(velodyne_msgs_.empty()) {return false;} cloud = velodyne_msgs_.front(); velodyne_msgs_.pop_front(); return true;});
         msg_unique_lock.unlock();
         DataGroupPtr data_group(new DataGroup);
@@ -67,32 +46,16 @@ void LabSLAM::preprocessWork() {
 
 void LabSLAM::lidarOdoWork() {
     while(1){
-//        if(data_.empty()){
-//           sleep(0.01);
-//           continue;
-//        }
-//        data_mutex_.lock();
-//        auto data_group = std::move(data_.front());
-//        data_.pop_front();
-//        data_mutex_.unlock();
         DataGroupPtr data_group(new DataGroup);
         std::unique_lock<std::mutex> data_unique_lock(data_mutex_);
         data_condit_var_.wait(data_unique_lock, [this, &data_group](){if(data_.empty()) return false; data_group = data_.front(); data_.pop_front(); return true;});
         data_unique_lock.unlock();
 
         KeyFramePtr key_frame = nullptr;
-//        key_frame_mutex_.lock();// 会被回环检测堵塞，等待全局位姿的校正，特别是要获得最优的drift估计
-        bool is_key_frame = lidar_odo_.work(data_group, key_frames_, key_frame);// TODO:注意key_frames_线程冲突
+        bool is_key_frame = lidar_odo_.work(data_group, key_frames_, key_frame);
         if(is_key_frame){
-//            closure_mutex_.lock();// 回环检测本身会修改成员变量new_key_frame_added_，需要等待完成才能继续
-//            new_key_frame_added_ = true;
-//            closure_mutex_.unlock();
             key_frames_.emplace_back(std::move(key_frame));
-            // 记录新增加的里程计约束，等待下次形成回环再进行更新
-            // 或者无需增加，直接等到回环再自行增加
-//            closure_var_.notify_all();
         }
-//        key_frame_mutex_.unlock();
         if(is_key_frame)
             loopClosure();
     }
@@ -133,12 +96,7 @@ void LabSLAM::publishGlobalMap(){
 }
 
 void LabSLAM::loopClosure(){
-//    while(1){
-//        std::unique_lock<std::mutex> loopClosureLock(closure_mutex_);
-//        closure_var_.wait(loopClosureLock, [this](){return new_key_frame_added_;});
-//        closure_var_.wait(loopClosureLock);// 这里还是有不安全的地方，里程计加入新的关键帧就会触发回环检测，但是回环检测默认查找最后帧的回环，过程中里程计可能会新增关键帧
         LoopClosurePair closure_pair;
-//        key_frame_mutex_.lock();// 期间不允许新增加key frames，而且本线程可能会对key frames进行修改
         Timer t("loop detection");
         if(loop_detection_.detect(key_frames_, closure_pair)){
             LOG(INFO) << "Success loop closure: " << closure_pair.target_index << " vs " << closure_pair.source_index;
@@ -227,9 +185,6 @@ int main(int argc, char** argv){
     google::InitGoogleLogging("LabSLAM");
     google::SetLogDestination(google::INFO, "/home/jin/Documents/lab_slam_ws/src/lab_slam/log/my_log_");
     google::SetStderrLogging(google::INFO);
-//    FLAGS_alsologtostderr = true;
-//    FLAGS_colorlogtostderr = true;
-//    google::LogToStderr();
     ros::init(argc, argv, "LabSLAM");
     LabSLAM lab_slam;
     std::thread pre_process(&LabSLAM::preprocessWork, &lab_slam);

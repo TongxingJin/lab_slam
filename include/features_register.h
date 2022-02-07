@@ -24,7 +24,7 @@ public:
 public:
     double delta_q_[4] = {0.0, 0.0, 0.0, 1.0};// x, y, z, w，这是ceres所决定的。而在Eigen::Quaternion的初始化中，w放在前面
     double delta_t_[3] = {0.0, 0.0, 0.0};
-    Eigen::Map<Eigen::Quaterniond> q_ = Eigen::Map<Eigen::Quaterniond>(delta_q_);// 不能在这里调用构造函数直接初始化，需要通过赋值
+    Eigen::Map<Eigen::Quaterniond> q_ = Eigen::Map<Eigen::Quaterniond>(delta_q_);
     Eigen::Map<Eigen::Vector3d> t_ = Eigen::Map<Eigen::Vector3d>(delta_t_);
     int max_ite_ = 8;// TODO
     float nn_distance_threshold_ = 2;// 0.5
@@ -52,10 +52,8 @@ public:
     }
 
     void cloudProjToEnd(PointCloudXYZIPtr local_cloud){
-        // 模板函数调用自己定义的模板函数必须<>!!
-        cloudProjToStart(local_cloud, local_cloud);// 过程中可能带有插值，所以使用的自己写的部分
-        // transformPointCloud其实也是个模板函数
-        pcl::transformPointCloud(*local_cloud, *local_cloud, Eigen::Affine3d(Eigen::Translation3d(t_) * q_).inverse());// 这一部分只是进行坐标变换而已
+        cloudProjToStart(local_cloud, local_cloud);
+        pcl::transformPointCloud(*local_cloud, *local_cloud, Eigen::Affine3d(Eigen::Translation3d(t_) * q_).inverse());
     }
 
     virtual bool align(PointCloudXYZIPtr corner_map, PointCloudXYZIPtr plane_map,
