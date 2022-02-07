@@ -131,15 +131,19 @@ void LidarOdometry::publishOpt(std_msgs::Header h) {
     planes_pub_.publish(tmp_msg);
 }
 
-void LidarOdometry::work(const DataGroupPtr& data_group) {
+bool LidarOdometry::work(const DataGroupPtr& data_group, const std::vector<KeyFramePtr>& key_frames, KeyFramePtr& new_frame) {
 //    LOG(INFO) << "odo work...";
 //    ROS_INFO("Data center add in odo: %p", DataCenter::Instance());
     if(!is_initialized){
         *last_corners_ = *data_group->less_corner_cloud;
         *last_planes_ = *data_group->less_plane_cloud;
+        last_scan2scan_pose_ = current_pose_ = current_pose_opt_ = odo_drift_ = last_history_pose_ = Eigen::Affine3d::Identity();
+        accumulate_dis_ = 0.0;
+//        key_frames.emplace_back(std::make_shared<KeyFrame>(current_pose_opt_, accumulate_dis_, data_group->less_corner_cloud, data_group->less_plane_cloud));
+        new_frame = std::make_shared<KeyFrame>(key_frames.size(), current_pose_, accumulate_dis_, current_pose_opt_, data_group->less_corner_cloud, data_group->less_plane_cloud);
         is_initialized = true;
         LOG(INFO) << "Odo is initialized...";
-        return;
+        return true;
     }
     LOG(INFO) << "Start odo process-----------------";
     Timer odo_work_timer("-------------------------odo work");
@@ -179,37 +183,50 @@ void LidarOdometry::work(const DataGroupPtr& data_group) {
 
     Eigen::Affine3d delta_history_pose = last_history_pose_.inverse() * current_pose_;
     bool is_key_frame = false;
-    if(key_frames_.size() < 5 || delta_history_pose.translation().norm() > 0.5 || Eigen::AngleAxisd(delta_history_pose.rotation()).angle() > 2 * ANG2RAD){
+    if(key_frames.size() < 5 || delta_history_pose.translation().norm() > 0.5 || Eigen::AngleAxisd(delta_history_pose.rotation()).angle() > 2 * ANG2RAD){
         // scan2map optimization
         is_key_frame = true;
-        if(key_frames_.size() >= 5){ // 帧数足够多才会优化
+        if(key_frames.size() >= 5){ // 帧数足够多才会优化
             // construct surrounding map
             // TODO: sliding window
             surrounding_corner_map_->clear();
             surrounding_plane_map_->clear();
 //            LOG(INFO) << "Before Add: " << key_frames_.size() - 20;
-            int num = key_frames_.size();// 强制size_t转int，避免-负数溢出
+            int num = key_frames.size();// 强制size_t转int，避免-负数溢出
             PointCloudXYZI tmp_cloud;
             for(int index = num - 1; index >= num - 20 && index >= 0; --index){ // 最近20帧
 //                LOG(INFO) << "Add: " << (key_frames_.at(index)->corner_cloud_)->size();
-                const KeyFrame& current_key = *(key_frames_.at(index));
+                const KeyFrame& current_key = *(key_frames.at(index));
                 tmp_cloud.clear();
-                pcl::transformPointCloud(*(current_key.corner_cloud_), tmp_cloud, current_key.odo_pose_);
+                pcl::transformPointCloud(*(current_key.corner_cloud_), tmp_cloud, current_key.pose_);
                 *surrounding_corner_map_ += tmp_cloud;
                 tmp_cloud.clear();
-                pcl::transformPointCloud(*(current_key.plane_cloud_), tmp_cloud, current_key.odo_pose_);
+                pcl::transformPointCloud(*(current_key.plane_cloud_), tmp_cloud, current_key.pose_);
                 *surrounding_plane_map_ += tmp_cloud;
             }
             // 发布周围环境地图
             {
-                surrounding_map_->clear();
-                *surrounding_map_ += *surrounding_corner_map_;
-                *surrounding_map_ += *surrounding_plane_map_;
-                sensor_msgs::PointCloud2 cloud_msg;
-                pcl::toROSMsg(*surrounding_map_, cloud_msg);
-                cloud_msg.header.stamp = data_group->h.stamp;
-                cloud_msg.header.frame_id = "map";
-                surrounding_map_pub_.publish(cloud_msg);
+                if(surrounding_map_pub_.getNumSubscribers() > 0){
+                    surrounding_map_->clear();
+                    *surrounding_map_ += *surrounding_corner_map_;
+                    *surrounding_map_ += *surrounding_plane_map_;
+                    sensor_msgs::PointCloud2 cloud_msg;
+                    pcl::toROSMsg(*surrounding_map_, cloud_msg);
+                    cloud_msg.header.stamp = data_group->h.stamp;
+                    cloud_msg.header.frame_id = "map";
+                    surrounding_map_pub_.publish(cloud_msg);
+                }
+//                // debug
+//                static int index = 0;
+//                pcl::io::savePCDFileBinaryCompressed("/home/jin/Documents/lab_slam_ws/src/lab_slam/tmp/odo/submap_" + std::to_string(index) + ".pcd", *surrounding_map_);
+//                surrounding_map_->clear();
+//                PointCloudXYZI tmp;
+//                pcl::transformPointCloud(*data_group->less_corner_cloud, tmp, current_pose_opt_);
+//                *surrounding_map_ += tmp;
+//                pcl::transformPointCloud(*data_group->less_plane_cloud, tmp, current_pose_opt_);
+//                *surrounding_map_ += tmp;
+//                pcl::io::savePCDFileBinaryCompressed("/home/jin/Documents/lab_slam_ws/src/lab_slam/tmp/odo/scan_" + std::to_string(index) + ".pcd", *surrounding_map_);
+//                index++;
             }
             LOG(INFO) << "Surrounding map size: " << surrounding_corner_map_->size() << ", " << surrounding_plane_map_->size();
             // TODO: scan2map opt
@@ -221,16 +238,18 @@ void LidarOdometry::work(const DataGroupPtr& data_group) {
             LOG(INFO) << "Less than 5";
         }
         // save key frames
-        key_frames_.emplace_back(std::make_shared<KeyFrame>(current_pose_opt_, data_group->less_corner_cloud, data_group->less_plane_cloud));
+        accumulate_dis_ += delta_history_pose.translation().norm();
+//        key_frames.emplace_back(std::make_shared<KeyFrame>(current_pose_opt_, accumulate_dis_, data_group->less_corner_cloud, data_group->less_plane_cloud));
+        new_frame = std::make_shared<KeyFrame>(key_frames.size(), current_pose_, accumulate_dis_, current_pose_opt_, data_group->less_corner_cloud, data_group->less_plane_cloud);
         last_history_pose_ = current_pose_;// 用优化前的scan2scan位姿
-        LOG(INFO) << "KeyFrame size: " << key_frames_.size();
+        LOG(INFO) << "KeyFrame size: " << key_frames.size();
     }
     {
         double x, y, z, roll, pitch, yaw;
         pcl::getTranslationAndEulerAngles(current_pose_opt_, x, y, z, roll, pitch,yaw);
         LOG(INFO) << "Opt pose: " << x << ", " << y << ", " << z << ", " << roll << ", " << pitch << ", " << yaw;
     }
-    publishOpt(data_group->h);
+    publishOpt(data_group->h);// 无论是不是关键帧
     if(is_key_frame){
         origin_cloud_repub_.publish(data_group->cloud_msg);
 //        sensor_msgs::PointCloud2 tmp_cloud;
@@ -240,5 +259,5 @@ void LidarOdometry::work(const DataGroupPtr& data_group) {
     }
 
     odo_work_timer.end();
-
+    return is_key_frame;
 }

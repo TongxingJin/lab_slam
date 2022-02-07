@@ -53,10 +53,13 @@ message(STATUS ${GLOG_INCLUDE_DIRS})
 file(GLOB_RECURSE src_files src/*.cpp)
 
 add_executable(lab_slam ${src_files}) # ${}不能少
-target_link_libraries(lab_slam ${catkin_LIBRARIES} ${PCL_LIBRARIES} glog ${CERES_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(lab_slam ${catkin_LIBRARIES} ${PCL_LIBRARIES} glog ${CERES_LIBRARIES} ${OpenCV_LIBS} gtsam)
 
 add_executable(tf_test test/tf_test.cpp) # ${}不能少
 target_link_libraries(tf_test ${catkin_LIBRARIES} ${PCL_LIBRARIES} glog ${CERES_LIBRARIES})
 
 add_executable(tf_test2 test/tf_test2.cpp) # ${}不能少
 target_link_libraries(tf_test2 ${catkin_LIBRARIES} ${PCL_LIBRARIES} glog ${CERES_LIBRARIES})
+
+add_executable(test_demo main.cpp)
+target_link_libraries(test_demo glog)

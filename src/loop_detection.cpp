@@ -13,7 +13,7 @@ bool LoopDetection::alignKeyFrames(const std::vector<KeyFramePtr> &key_frames,
 
     PointCloudXYZIPtr target_cloud(new PointCloudXYZI);
     int target_index = loop_pairs.target_index;
-    Eigen::Affine3d target_pose = key_frames.at(target_index)->odo_pose_;
+    Eigen::Affine3d target_pose = key_frames.at(target_index)->pose_;
     for(int index = target_index - near_frame_num_; index < target_index + near_frame_num_; ++index){
         if(index < 0 || index >= key_frames.size()) continue;
 //        *target_cloud += *(key_frames.at(index)->corner_cloud_);
@@ -21,14 +21,14 @@ bool LoopDetection::alignKeyFrames(const std::vector<KeyFramePtr> &key_frames,
         tmp_cloud.clear();
         tmp_cloud += *(key_frames.at(index)->corner_cloud_);
         tmp_cloud += *(key_frames.at(index)->plane_cloud_);
-        tmp_delta = target_pose.inverse() * key_frames.at(index)->odo_pose_;
+        tmp_delta = target_pose.inverse() * key_frames.at(index)->pose_;
         pcl::transformPointCloud(tmp_cloud, tmp_cloud, tmp_delta);
         *target_cloud += tmp_cloud;
     }
     LOG(INFO) << "Target frame map size: " << target_cloud->size();
     PointCloudXYZIPtr source_cloud(new PointCloudXYZI);
     int source_index = loop_pairs.source_index;
-    Eigen::Affine3d source_pose = key_frames.at(source_index)->odo_pose_;
+    Eigen::Affine3d source_pose = key_frames.at(source_index)->pose_;
     for(int index = source_index - near_frame_num_; index < source_index + near_frame_num_; ++index){
         if(index < 0 || index >= key_frames.size()) continue;
 //        *source_cloud += *(key_frames.at(index)->corner_cloud_);
@@ -36,13 +36,13 @@ bool LoopDetection::alignKeyFrames(const std::vector<KeyFramePtr> &key_frames,
         tmp_cloud.clear();
         tmp_cloud += *(key_frames.at(index)->corner_cloud_);
         tmp_cloud += *(key_frames.at(index)->plane_cloud_);
-        tmp_delta = source_pose.inverse() * key_frames.at(index)->odo_pose_;
+        tmp_delta = source_pose.inverse() * key_frames.at(index)->pose_;
         pcl::transformPointCloud(tmp_cloud, tmp_cloud, tmp_delta);
         *source_cloud += tmp_cloud;
     }
     LOG(INFO) << "Source frame map size: " << source_cloud->size();
 
-    Eigen::Affine3d init_delta = key_frames.at(target_index)->odo_pose_.inverse() * key_frames.at(source_index)->odo_pose_;
+    Eigen::Affine3d init_delta = key_frames.at(target_index)->pose_.inverse() * key_frames.at(source_index)->pose_;
     pcl::IterativeClosestPoint<PointXYZI, PointXYZI> icp;
     icp.setMaxCorrespondenceDistance(1);// TODO:假设误差积累不超过3m
     icp.setMaximumIterations(30);// terminate conditions
@@ -85,7 +85,7 @@ bool LoopDetection::detect(const std::vector<KeyFramePtr> &key_frames, LoopClosu
     bool closed = false;
     if(key_frames.empty()) return false;// 正常情况下不可能发生
     KeyFramePtr current_frame = key_frames.back();
-    Eigen::Affine3d current_pose = current_frame->odo_pose_;
+    Eigen::Affine3d current_pose = current_frame->pose_;
     Eigen::Vector3d current_position(current_pose.translation());
     pcl::PointXYZ current_position_point = v2p(current_position);
     double odo_dis = current_frame->odo_dis_;
@@ -115,9 +115,6 @@ bool LoopDetection::detect(const std::vector<KeyFramePtr> &key_frames, LoopClosu
             closure_pair.target_index = target_index;
             closure_pair.source_index = key_frames.size() - 1;
             closed = alignKeyFrames(key_frames, closure_pair);
-//            if(closed){
-//                history_loop_odo_dis_ = odo_dis;
-//            }
         }
     }
 

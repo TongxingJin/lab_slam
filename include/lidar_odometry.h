@@ -23,11 +23,19 @@ class LidarOdometry{
 public:
     LidarOdometry();
 
-    void work(const DataGroupPtr& data_group);
+    bool work(const DataGroupPtr& data_group, const std::vector<KeyFramePtr>& key_frames, KeyFramePtr& new_frame);
 
     void publish(std_msgs::Header h);
 
     void publishOpt(std_msgs::Header h);
+
+    void setCurrentPoseOpt(const Eigen::Affine3d& pose) {
+        current_pose_opt_ = pose;
+    }
+
+    void setOdoDrift(const Eigen::Affine3d& drift){
+        odo_drift_ = drift;
+    }
 private:
     bool deskew_ = false;// aloam开启这个效果也不好
     bool use_const_velo_ = true;
@@ -46,7 +54,8 @@ private:
 
     Scan2MapMatcher scan2map_mather_;
     Eigen::Affine3d last_history_pose_ = Eigen::Affine3d::Identity();
-    std::vector<std::shared_ptr<KeyFrame>> key_frames_;
+    double accumulate_dis_ = 0.0;
+//    std::vector<std::shared_ptr<KeyFrame>> key_frames_;
     PointCloudXYZIPtr surrounding_corner_map_  = nullptr;
     PointCloudXYZIPtr surrounding_plane_map_ = nullptr;
     PointCloudXYZIPtr surrounding_map_ = nullptr;

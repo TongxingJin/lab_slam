@@ -58,6 +58,15 @@ Eigen::Vector3d p2v(const Point& point){
     return vector;
 }
 
+template <typename T>
+pcl::PointXYZ v2p(Eigen::Matrix<T, 3, 1> v){
+    pcl::PointXYZ point;
+    point.x = v.x();
+    point.y = v.y();
+    point.z = v.z();
+    return point;
+}
+
 //// TODO: 三维向量不包含强度
 //PointXYZI eigenVectorToPcl(Eigen::Vector3d vector){
 //    PointXYZI point;
