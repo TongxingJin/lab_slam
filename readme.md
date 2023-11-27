@@ -1,4 +1,5 @@
 # LAB_SLAM
+# 该仓库是知乎文章 [从零开始手写激光SLAM](https://zhuanlan.zhihu.com/p/455240911?utm_psn=1712482793651765249)   随堂源码，欢迎关注！
 
 This lab_slam is an exercise for me, both in SLAM theory and programing skills, thus it may be naive for some experts.
 
